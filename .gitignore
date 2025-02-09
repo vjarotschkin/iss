@@ -1,6 +1,6 @@
-/data
-# .Rproj.user
-
+# Data (if you don't want to track data in Git, which is often the case)
+# The trailing / is important to ignore the directory and its contents
+data/  
 
 # Python virtual environment
 .venv/
@@ -8,25 +8,26 @@ __pycache__/
 *.pyc
 
 # R environment and temporary files
-.Rproj.user/
+# This is usually sufficient; no need to list individual files within .Rproj.user
+.Rproj.user/  
 .Rhistory
 .RData
 .Ruserdata
-renv/
-renv/library/
-renv/staging/
-renv/cache/
+renv/private # Ignores the private library
+renv/staging
+renv/cache
 
 # OS-specific files
 .DS_Store
 Thumbs.db
 
 # Quarto temporary files
-/_freeze/
-/_manuscript/
-/.quarto/
+_freeze/
+_manuscript/
+.quarto/
 *_cache/
-*_files//renv
-renv/
-iss.code-workspace
-.Rprofile
+*_files/
+
+# Other files/directories to ignore
+iss.code-workspace # If you use VS Code
+.Rprofile # Good to ignore if it contains machine-specific paths or settings
