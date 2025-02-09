@@ -9,11 +9,14 @@ __pycache__/
 
 # R environment and temporary files
 # This is usually sufficient; no need to list individual files within .Rproj.user
+.Rprofile
 .Rproj.user/  
 .Rhistory
 .RData
 .Ruserdata
-renv/private # Ignores the private library
+renv/
+# Ignores the private library
+renv/private 
 renv/staging
 renv/cache
 
