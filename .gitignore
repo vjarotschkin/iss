@@ -1,0 +1,32 @@
+/data
+# .Rproj.user
+
+
+# Python virtual environment
+.venv/
+__pycache__/
+*.pyc
+
+# R environment and temporary files
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+renv/
+renv/library/
+renv/staging/
+renv/cache/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Quarto temporary files
+/_freeze/
+/_manuscript/
+/.quarto/
+*_cache/
+*_files//renv
+renv/
+iss.code-workspace
+.Rprofile
