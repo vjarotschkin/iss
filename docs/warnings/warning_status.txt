@@ -1,0 +1,22 @@
+Data Import Warning Status
+Generated on: 2025-02-11 00:01:29.604681
+--------------------------------------------------
+File Year                      Has Warnings?
+--------------------------------------------------
+1990                           YES
+1996                           YES
+2002                           YES
+2006                           YES
+2008                           YES
+2009                           YES
+2010                           YES
+2011                           YES
+2012                           YES
+2013                           YES
+2014                           YES
+2015                           YES
+2016                           YES
+2017                           YES
+2018                           YES
+2019                           YES
+2020                           YES

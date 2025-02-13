@@ -34,3 +34,4 @@ _manuscript/
 # Other files/directories to ignore
 iss.code-workspace # If you use VS Code
 .Rprofile # Good to ignore if it contains machine-specific paths or settings
+.Rproj.user
