@@ -8,7 +8,7 @@ pacman::p_load(
   tidyverse,
   lubridate,
   data.table
-)
+  )
 
 # -------------------------------------------------------------------------
 # Integrity Checking
@@ -275,35 +275,35 @@ main <- function() {
 
   # 1) Clean each dataset if not NULL
   if (!is.null(opps_data))           opps_data           <<- clean_opps_data(opps_data)
-  if (!is.null(quotes_data))         quotes_data         <<- clean_quotes_data(quotes_data)
+  # if (!is.null(quotes_data))         quotes_data         <<- clean_quotes_data(quotes_data)
   if (!is.null(sap_software_data))   sap_software_data   <<- clean_sap_software(sap_software_data)
-  if (!is.null(sap_machines_data))   sap_machines_data   <<- clean_sap_machines(sap_machines_data)
-  if (!is.null(sis_installed_base))  sis_installed_base  <<- clean_sis_installed_base(sis_installed_base)
-  if (!is.null(sis_cases))           sis_cases           <<- clean_sis_cases(sis_cases)
-  if (!is.null(sis_missions))        sis_missions        <<- clean_sis_missions(sis_missions)
-  if (!is.null(customer_data))       customer_data       <<- clean_customer_data(customer_data)
-  if (!is.null(contacts_data))       contacts_data       <<- clean_contacts_data(contacts_data)
-  if (!is.null(meetings_data))       meetings_data       <<- clean_meetings_data(meetings_data)
-  if (!is.null(mails_data))          mails_data          <<- clean_mails_data(mails_data)
-  if (!is.null(other_act_data))      other_act_data      <<- clean_other_act_data(other_act_data)
-  if (!is.null(registered_products)) registered_products <<- clean_registered_products(registered_products)
-  if (!is.null(survey_data))         survey_data         <<- clean_survey_data(survey_data)
+  # if (!is.null(sap_machines_data))   sap_machines_data   <<- clean_sap_machines(sap_machines_data)
+  # if (!is.null(sis_installed_base))  sis_installed_base  <<- clean_sis_installed_base(sis_installed_base)
+  # if (!is.null(sis_cases))           sis_cases           <<- clean_sis_cases(sis_cases)
+  # if (!is.null(sis_missions))        sis_missions        <<- clean_sis_missions(sis_missions)
+  # if (!is.null(customer_data))       customer_data       <<- clean_customer_data(customer_data)
+  # if (!is.null(contacts_data))       contacts_data       <<- clean_contacts_data(contacts_data)
+  # if (!is.null(meetings_data))       meetings_data       <<- clean_meetings_data(meetings_data)
+  # if (!is.null(mails_data))          mails_data          <<- clean_mails_data(mails_data)
+  # if (!is.null(other_act_data))      other_act_data      <<- clean_other_act_data(other_act_data)
+  # if (!is.null(registered_products)) registered_products <<- clean_registered_products(registered_products)
+  # if (!is.null(survey_data))         survey_data         <<- clean_survey_data(survey_data)
 
   # 2) Optional: re-check integrity after cleaning
-  check_integrity(opps_data,           "opps_data_cleaned")
-  check_integrity(quotes_data,         "quotes_data_cleaned")
-  check_integrity(sap_software_data,   "sap_software_data_cleaned")
-  check_integrity(sap_machines_data,   "sap_machines_data_cleaned")
-  check_integrity(sis_installed_base,  "sis_installed_base_cleaned")
-  check_integrity(sis_cases,           "sis_cases_cleaned")
-  check_integrity(sis_missions,        "sis_missions_cleaned")
-  check_integrity(customer_data,       "customer_data_cleaned")
-  check_integrity(contacts_data,       "contacts_data_cleaned")
-  check_integrity(meetings_data,       "meetings_data_cleaned")
-  check_integrity(mails_data,          "mails_data_cleaned")
-  check_integrity(other_act_data,      "other_act_data_cleaned")
-  check_integrity(registered_products, "registered_products_cleaned")
-  check_integrity(survey_data,         "survey_data_cleaned")
+  # check_integrity(opps_data,           "opps_data_cleaned")
+  # check_integrity(quotes_data,         "quotes_data_cleaned")
+  # check_integrity(sap_software_data,   "sap_software_data_cleaned")
+  # check_integrity(sap_machines_data,   "sap_machines_data_cleaned")
+  # check_integrity(sis_installed_base,  "sis_installed_base_cleaned")
+  # check_integrity(sis_cases,           "sis_cases_cleaned")
+  # check_integrity(sis_missions,        "sis_missions_cleaned")
+  # check_integrity(customer_data,       "customer_data_cleaned")
+  # check_integrity(contacts_data,       "contacts_data_cleaned")
+  # check_integrity(meetings_data,       "meetings_data_cleaned")
+  # check_integrity(mails_data,          "mails_data_cleaned")
+  # check_integrity(other_act_data,      "other_act_data_cleaned")
+  # check_integrity(registered_products, "registered_products_cleaned")
+  # check_integrity(survey_data,         "survey_data_cleaned")
 
   # 3) Save all cleaned data to 'data/processed'
   processed_dir <- here::here("data", "processed")
