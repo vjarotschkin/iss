@@ -507,6 +507,326 @@ add_customer_characteristics <- function(panel_data, opps_data, customer_data) {
 #' @param opps_data Opportunities data
 #' @param product_categories Product category definitions
 #' @return Panel with opportunity features added
+# add_opportunity_features <- function(panel_data, opps_data, product_categories) {
+#   log_info("Adding opportunity features")
+#   
+#   # Check data structure
+#   check_data_structure(opps_data, "opportunities data")
+#   check_data_structure(panel_data, "panel data")
+#   
+#   # Find or derive required columns for opportunities
+#   status_col <- find_column_match(
+#     opps_data, 
+#     "to_opportunity_status", 
+#     c("opportunity_status", "status", "state")
+#   )
+#   
+#   product_cat_col <- find_column_match(
+#     opps_data, 
+#     "to_product_category", 
+#     c("product_category", "category", "product_type")
+#   )
+#   
+#   value_col <- find_column_match(
+#     opps_data, 
+#     "to_expected_value", 
+#     c("expected_value", "value", "amount")
+#   )
+#   
+#   close_year_col <- find_column_match(
+#     opps_data, 
+#     "to_close_year", 
+#     c("close_year", "year", "opp_year")
+#   )
+#   
+#   # If close_year is missing but close_date exists, derive it
+#   if (is.null(close_year_col) && "to_close_date" %in% names(opps_data)) {
+#     log_info("Deriving to_close_year from to_close_date")
+#     opps_data <- opps_data %>%
+#       dplyr::mutate(to_close_year = lubridate::year(to_close_date))
+#     close_year_col <- "to_close_year"
+#   }
+#   
+#   # Log required columns for reporting
+#   required_cols <- c(
+#     "to_customer_id", status_col, product_cat_col, 
+#     value_col, close_year_col
+#   )
+#   
+#   log_info("Using columns for opportunity features: %s", 
+#            paste(required_cols, collapse=", "))
+#   
+#   # Check if we have the required columns
+#   if (any(sapply(required_cols, is.null))) {
+#     missing_cols <- required_cols[sapply(required_cols, is.null)]
+#     stop(paste("Missing required columns for opportunity features:", 
+#                paste(missing_cols, collapse=", ")))
+#   }
+#   
+#   # Add debug info for exploration pattern
+#   log_info("Checking for exploration patterns in column: %s", product_cat_col)
+#   log_info("Using exploration pattern: %s", product_categories$exploration_pattern)
+#   log_info("Sample product categories: %s", 
+#            paste(head(unique(opps_data[[product_cat_col]]), 10), collapse=", "))
+#   
+#   # Add exploration/exploitation flags to opportunities
+#   opps_with_flags <- opps_data %>%
+#     dplyr::mutate(
+#       to_customer_id = as.character(to_customer_id),
+#       
+#       # Add exploration software purchase flag
+#       exploration_sw_purchase = dplyr::case_when(
+#         grepl(product_categories$exploration_pattern, .data[[product_cat_col]], ignore.case = TRUE) &
+#           .data[[status_col]] == "Won" ~ 1,
+#         TRUE ~ 0
+#       ),
+#       
+#       # Add exploitation software purchase flag
+#       exploitation_sw_purchase = dplyr::case_when(
+#         grepl(product_categories$exploitation_pattern, .data[[product_cat_col]], ignore.case = TRUE) &
+#           .data[[status_col]] == "Won" ~ 1,
+#         TRUE ~ 0
+#       )
+#     )
+#   
+#   # Log some stats about flags
+#   log_info("Found %d exploration software purchases", 
+#            sum(opps_with_flags$exploration_sw_purchase))
+#   log_info("Found %d exploitation software purchases", 
+#            sum(opps_with_flags$exploitation_sw_purchase))
+#   
+#   # STEP 1: Basic aggregation in summarise
+#   opps_yearly <- opps_with_flags %>%
+#     dplyr::group_by(to_customer_id, .data[[close_year_col]]) %>%
+#     dplyr::summarise(
+#       # Basic opportunity metrics
+#       to_number_of_opps = n(),
+#       to_sum_opps_closed = sum(
+#         .data[[status_col]] %in% c("Won", "Lost", "Lost (autom.)", "Not realized"),
+#         na.rm = TRUE
+#       ),
+#       to_sum_opps_won = sum(.data[[status_col]] == "Won", na.rm = TRUE),
+#       to_sum_val_opps_won = sum(
+#         ifelse(.data[[status_col]] == "Won", .data[[value_col]], 0),
+#         na.rm = TRUE
+#       ),
+#       
+#       # Software purchase indicators
+#       to_exploration_sw_purchase = sum(exploration_sw_purchase, na.rm = TRUE),
+#       to_exploitation_sw_purchase = sum(exploitation_sw_purchase, na.rm = TRUE),
+#       
+#       # Product categories - closed opportunities
+#       to_closed_accessories = sum(
+#         .data[[product_cat_col]] %in% product_categories$t_accessories &
+#           .data[[status_col]] %in% c("Won", "Lost", "Not realized"),
+#         na.rm = TRUE
+#       ),
+#       to_closed_hw_mt_standalone = sum(
+#         .data[[product_cat_col]] %in% product_categories$t_hw_mt_standalone &
+#           .data[[status_col]] %in% c("Won", "Lost", "Not realized"),
+#         na.rm = TRUE
+#       ),
+#       to_closed_hw_lt_standalone = sum(
+#         .data[[product_cat_col]] %in% product_categories$t_hw_lt_standalone &
+#           .data[[status_col]] %in% c("Won", "Lost", "Not realized"),
+#         na.rm = TRUE
+#       ),
+#       to_closed_software = sum(
+#         .data[[product_cat_col]] %in% product_categories$t_software &
+#           .data[[status_col]] %in% c("Won", "Lost", "Not realized"),
+#         na.rm = TRUE
+#       ),
+#       to_closed_services = sum(
+#         .data[[product_cat_col]] %in% product_categories$t_services &
+#           .data[[status_col]] %in% c("Won", "Lost", "Not realized"),
+#         na.rm = TRUE
+#       ),
+#       
+#       # Product categories - won value
+#       to_value_accessories = sum(
+#         ifelse(
+#           .data[[product_cat_col]] %in% product_categories$t_accessories & 
+#             .data[[status_col]] == "Won",
+#           .data[[value_col]], 0
+#         ),
+#         na.rm = TRUE
+#       ),
+#       to_value_hw_mt_standalone = sum(
+#         ifelse(
+#           .data[[product_cat_col]] %in% product_categories$t_hw_mt_standalone & 
+#             .data[[status_col]] == "Won",
+#           .data[[value_col]], 0
+#         ),
+#         na.rm = TRUE
+#       ),
+#       to_value_hw_lt_standalone = sum(
+#         ifelse(
+#           .data[[product_cat_col]] %in% product_categories$t_hw_lt_standalone & 
+#             .data[[status_col]] == "Won",
+#           .data[[value_col]], 0
+#         ),
+#         na.rm = TRUE
+#       ),
+#       to_value_software = sum(
+#         ifelse(
+#           .data[[product_cat_col]] %in% product_categories$t_software & 
+#             .data[[status_col]] == "Won",
+#           .data[[value_col]], 0
+#         ),
+#         na.rm = TRUE
+#       ),
+#       to_value_services = sum(
+#         ifelse(
+#           .data[[product_cat_col]] %in% product_categories$t_services & 
+#             .data[[status_col]] == "Won",
+#           .data[[value_col]], 0
+#         ),
+#         na.rm = TRUE
+#       ),
+#       
+#       # Success rate metrics
+#       to_opp_winning_probability = ifelse(
+#         to_sum_opps_closed == 0,
+#         0,
+#         to_sum_opps_won / to_sum_opps_closed
+#       ),
+#       
+#       .groups = 'drop'
+#     ) %>%
+#     # Rename the year column to 'year'
+#     dplyr::rename(year = .data[[close_year_col]])
+#   
+#   # STEP 2: Calculate first purchase years and other derived metrics AFTER renaming
+#   opps_yearly <- opps_yearly %>%
+#     dplyr::group_by(to_customer_id) %>%
+#     dplyr::mutate(
+#       # Calculate first purchase year
+#       to_first_purchase_year = ifelse(
+#         any(to_sum_opps_won > 0),
+#         min(year[to_sum_opps_won > 0], na.rm = TRUE),
+#         NA_real_
+#       ),
+#       
+#       # Calculate hardware purchase year 
+#       to_hw_purchase_year = ifelse(
+#         any(to_value_hw_mt_standalone + to_value_hw_lt_standalone > 0),
+#         min(year[to_value_hw_mt_standalone + to_value_hw_lt_standalone > 0], na.rm = TRUE),
+#         NA_real_
+#       ),
+#       
+#       # Calculate software purchase year
+#       to_sw_purchase_year = ifelse(
+#         any(to_value_software > 0),
+#         min(year[to_value_software > 0], na.rm = TRUE),
+#         NA_real_
+#       )
+#     ) %>%
+#     dplyr::ungroup()
+#   
+#   # Join with panel data and calculate derived metrics
+#   panel_data <- panel_data %>%
+#     dplyr::left_join(
+#       opps_yearly,
+#       by = c("customer_id" = "to_customer_id", "year")
+#     ) %>%
+#     dplyr::group_by(customer_id) %>%
+#     dplyr::mutate(
+#       # Replace NA with 0 for active relationship periods
+#       across(
+#         starts_with("to_"),
+#         ~case_when(
+#           relationship_status == "pre_relationship" ~ NA_real_,
+#           relationship_status == "active" ~ coalesce(., 0),
+#           TRUE ~ NA_real_
+#         )
+#       ),
+#       
+#       # Cumulative metrics
+#       to_cum_opps = cumsum(coalesce(to_number_of_opps, 0)),
+#       to_cum_opps_won = cumsum(coalesce(to_sum_opps_won, 0)),
+#       to_cum_val_opps_won = cumsum(coalesce(to_sum_val_opps_won, 0)),
+#       to_cum_exploration_purchase = cumsum(coalesce(to_exploration_sw_purchase, 0)),
+#       to_cum_exploitation_purchase = cumsum(coalesce(to_exploitation_sw_purchase, 0)),
+#       
+#       # Cumulative product category value
+#       to_cum_value_accessories = cumsum(coalesce(to_value_accessories, 0)),
+#       to_cum_value_hw_mt = cumsum(coalesce(to_value_hw_mt_standalone, 0)),
+#       to_cum_value_hw_lt = cumsum(coalesce(to_value_hw_lt_standalone, 0)),
+#       to_cum_value_software = cumsum(coalesce(to_value_software, 0)),
+#       to_cum_value_services = cumsum(coalesce(to_value_services, 0)),
+#       
+#       # Calculate first purchase years for different categories
+#       first_opp_year = ifelse(
+#         sum(to_number_of_opps, na.rm = TRUE) > 0,
+#         min(year[to_number_of_opps > 0], na.rm = TRUE),
+#         NA_real_
+#       ),
+#       first_exploration_purchase_year = ifelse(
+#         sum(to_exploration_sw_purchase, na.rm = TRUE) > 0,
+#         min(year[to_exploration_sw_purchase > 0], na.rm = TRUE),
+#         NA_real_
+#       ),
+#       first_exploitation_purchase_year = ifelse(
+#         sum(to_exploitation_sw_purchase, na.rm = TRUE) > 0,
+#         min(year[to_exploitation_sw_purchase > 0], na.rm = TRUE),
+#         NA_real_
+#       )
+#     ) %>%
+#     # Fill first purchase years down and up
+#     tidyr::fill(c(first_opp_year, first_exploration_purchase_year, 
+#                   first_exploitation_purchase_year), 
+#                 .direction = "downup") %>%
+#     dplyr::mutate(
+#       # Years since first purchase metrics
+#       years_since_first_opp = year - first_opp_year,
+#       years_since_first_exploration = ifelse(
+#         !is.na(first_exploration_purchase_year),
+#         year - first_exploration_purchase_year,
+#         NA_real_
+#       ),
+#       years_since_first_exploitation = ifelse(
+#         !is.na(first_exploitation_purchase_year),
+#         year - first_exploitation_purchase_year,
+#         NA_real_
+#       ),
+#       
+#       # Treatment indicators
+#       ever_purchased_exploration = !is.na(first_exploration_purchase_year),
+#       ever_purchased_exploitation = !is.na(first_exploitation_purchase_year),
+#       
+#       post_exploration_period = ifelse(
+#         !is.na(first_exploration_purchase_year) & year >= first_exploration_purchase_year,
+#         1, 0
+#       ),
+#       post_exploitation_period = ifelse(
+#         !is.na(first_exploitation_purchase_year) & year >= first_exploitation_purchase_year,
+#         1, 0
+#       ),
+#       
+#       # Rolling metrics (3-year windows)
+#       to_rolling_opps_3yr = zoo::rollmean(
+#         coalesce(to_number_of_opps, 0),
+#         k = 3, fill = NA, align = "right"
+#       ),
+#       to_rolling_value_3yr = zoo::rollmean(
+#         coalesce(to_sum_val_opps_won, 0),
+#         k = 3, fill = NA, align = "right"
+#       )
+#     ) %>%
+#     dplyr::ungroup()
+#   
+#   log_info("Added opportunity features")
+#   
+#   if (!"first_exploration_purchase_year" %in% names(panel_data)) {
+#     log_warn("first_exploration_purchase_year not created in opportunity features")
+#     # Create dummy variable as fallback
+#     panel_data$first_exploration_purchase_year <- NA_real_
+#     panel_data$post_exploration_period <- 0
+#   }
+#   
+#   return(panel_data)
+# }
+
 add_opportunity_features <- function(panel_data, opps_data, product_categories) {
   log_info("Adding opportunity features")
   
@@ -563,40 +883,11 @@ add_opportunity_features <- function(panel_data, opps_data, product_categories) 
                paste(missing_cols, collapse=", ")))
   }
   
-  # Add debug info for exploration pattern
-  log_info("Checking for exploration patterns in column: %s", product_cat_col)
-  log_info("Using exploration pattern: %s", product_categories$exploration_pattern)
-  log_info("Sample product categories: %s", 
-           paste(head(unique(opps_data[[product_cat_col]]), 10), collapse=", "))
-  
-  # Add exploration/exploitation flags to opportunities
-  opps_with_flags <- opps_data %>%
+  # STEP 1: Basic aggregation in summarise - without exploration/exploitation flags
+  opps_yearly <- opps_data %>%
     dplyr::mutate(
-      to_customer_id = as.character(to_customer_id),
-      
-      # Add exploration software purchase flag
-      exploration_sw_purchase = dplyr::case_when(
-        grepl(product_categories$exploration_pattern, .data[[product_cat_col]], ignore.case = TRUE) &
-          .data[[status_col]] == "Won" ~ 1,
-        TRUE ~ 0
-      ),
-      
-      # Add exploitation software purchase flag
-      exploitation_sw_purchase = dplyr::case_when(
-        grepl(product_categories$exploitation_pattern, .data[[product_cat_col]], ignore.case = TRUE) &
-          .data[[status_col]] == "Won" ~ 1,
-        TRUE ~ 0
-      )
-    )
-  
-  # Log some stats about flags
-  log_info("Found %d exploration software purchases", 
-           sum(opps_with_flags$exploration_sw_purchase))
-  log_info("Found %d exploitation software purchases", 
-           sum(opps_with_flags$exploitation_sw_purchase))
-  
-  # STEP 1: Basic aggregation in summarise
-  opps_yearly <- opps_with_flags %>%
+      to_customer_id = as.character(to_customer_id)
+    ) %>%
     dplyr::group_by(to_customer_id, .data[[close_year_col]]) %>%
     dplyr::summarise(
       # Basic opportunity metrics
@@ -610,10 +901,6 @@ add_opportunity_features <- function(panel_data, opps_data, product_categories) 
         ifelse(.data[[status_col]] == "Won", .data[[value_col]], 0),
         na.rm = TRUE
       ),
-      
-      # Software purchase indicators
-      to_exploration_sw_purchase = sum(exploration_sw_purchase, na.rm = TRUE),
-      to_exploitation_sw_purchase = sum(exploitation_sw_purchase, na.rm = TRUE),
       
       # Product categories - closed opportunities
       to_closed_accessories = sum(
@@ -696,7 +983,7 @@ add_opportunity_features <- function(panel_data, opps_data, product_categories) 
     # Rename the year column to 'year'
     dplyr::rename(year = .data[[close_year_col]])
   
-  # STEP 2: Calculate first purchase years and other derived metrics AFTER renaming
+  # STEP 2: Calculate first purchase years and other derived metrics
   opps_yearly <- opps_yearly %>%
     dplyr::group_by(to_customer_id) %>%
     dplyr::mutate(
@@ -745,8 +1032,6 @@ add_opportunity_features <- function(panel_data, opps_data, product_categories) 
       to_cum_opps = cumsum(coalesce(to_number_of_opps, 0)),
       to_cum_opps_won = cumsum(coalesce(to_sum_opps_won, 0)),
       to_cum_val_opps_won = cumsum(coalesce(to_sum_val_opps_won, 0)),
-      to_cum_exploration_purchase = cumsum(coalesce(to_exploration_sw_purchase, 0)),
-      to_cum_exploitation_purchase = cumsum(coalesce(to_exploitation_sw_purchase, 0)),
       
       # Cumulative product category value
       to_cum_value_accessories = cumsum(coalesce(to_value_accessories, 0)),
@@ -760,48 +1045,14 @@ add_opportunity_features <- function(panel_data, opps_data, product_categories) 
         sum(to_number_of_opps, na.rm = TRUE) > 0,
         min(year[to_number_of_opps > 0], na.rm = TRUE),
         NA_real_
-      ),
-      first_exploration_purchase_year = ifelse(
-        sum(to_exploration_sw_purchase, na.rm = TRUE) > 0,
-        min(year[to_exploration_sw_purchase > 0], na.rm = TRUE),
-        NA_real_
-      ),
-      first_exploitation_purchase_year = ifelse(
-        sum(to_exploitation_sw_purchase, na.rm = TRUE) > 0,
-        min(year[to_exploitation_sw_purchase > 0], na.rm = TRUE),
-        NA_real_
       )
     ) %>%
     # Fill first purchase years down and up
-    tidyr::fill(c(first_opp_year, first_exploration_purchase_year, 
-                  first_exploitation_purchase_year), 
+    tidyr::fill(c(first_opp_year), 
                 .direction = "downup") %>%
     dplyr::mutate(
       # Years since first purchase metrics
       years_since_first_opp = year - first_opp_year,
-      years_since_first_exploration = ifelse(
-        !is.na(first_exploration_purchase_year),
-        year - first_exploration_purchase_year,
-        NA_real_
-      ),
-      years_since_first_exploitation = ifelse(
-        !is.na(first_exploitation_purchase_year),
-        year - first_exploitation_purchase_year,
-        NA_real_
-      ),
-      
-      # Treatment indicators
-      ever_purchased_exploration = !is.na(first_exploration_purchase_year),
-      ever_purchased_exploitation = !is.na(first_exploitation_purchase_year),
-      
-      post_exploration_period = ifelse(
-        !is.na(first_exploration_purchase_year) & year >= first_exploration_purchase_year,
-        1, 0
-      ),
-      post_exploitation_period = ifelse(
-        !is.na(first_exploitation_purchase_year) & year >= first_exploitation_purchase_year,
-        1, 0
-      ),
       
       # Rolling metrics (3-year windows)
       to_rolling_opps_3yr = zoo::rollmean(
@@ -817,13 +1068,6 @@ add_opportunity_features <- function(panel_data, opps_data, product_categories) 
   
   log_info("Added opportunity features")
   
-  if (!"first_exploration_purchase_year" %in% names(panel_data)) {
-    log_warn("first_exploration_purchase_year not created in opportunity features")
-    # Create dummy variable as fallback
-    panel_data$first_exploration_purchase_year <- NA_real_
-    panel_data$post_exploration_period <- 0
-  }
-  
   return(panel_data)
 }
 
@@ -833,17 +1077,262 @@ add_opportunity_features <- function(panel_data, opps_data, product_categories) 
 #' @param sap_software_data SAP software data
 #' @param customer_data Customer data (for ID mapping)
 #' @return Panel with SAP software features added
+# add_software_features <- function(panel_data, sap_software_data, customer_data) {
+#   log_info("Adding SAP software features")
+#   
+#   # Check if data is available
+#   if (is.null(sap_software_data)) {
+#     log_warn("SAP software data is not available, skipping software features")
+#     return(panel_data)
+#   }
+#   
+#   # Check data structure
+#   check_data_structure(sap_software_data, "SAP software data")
+#   
+#   # Find required columns
+#   customer_id_col <- find_column_match(
+#     sap_software_data, 
+#     "ts_customer_id", 
+#     c("customer_id", "endkunde", "kunde")
+#   )
+#   
+#   year_col <- find_column_match(
+#     sap_software_data, 
+#     "ts_year", 
+#     c("year", "geschaftsjahr", "fin_year")
+#   )
+#   
+#   generation_col <- find_column_match(
+#     sap_software_data, 
+#     "ts_generation", 
+#     c("generation", "x5_generation")
+#   )
+#   
+#   revenue_col <- find_column_match(
+#     sap_software_data, 
+#     "ts_revenue", 
+#     c("revenue", "umsatz")
+#   )
+#   
+#   # Log required columns for reporting
+#   required_cols <- c(customer_id_col, year_col, generation_col, revenue_col)
+#   log_info("Using columns for software features: %s", paste(required_cols, collapse=", "))
+#   
+#   # Check if we have the required columns
+#   if (any(sapply(required_cols, is.null))) {
+#     missing_cols <- required_cols[sapply(required_cols, is.null)]
+#     log_warn("Missing required columns for software features: %s", 
+#              paste(missing_cols, collapse=", "))
+#     return(panel_data)
+#   }
+#   
+#   # Add debug info for exploration pattern detection in SAP data
+#   log_info("Checking for exploration patterns in SAP data column: %s", generation_col)
+#   log_info("Sample generation values: %s", 
+#            paste(head(unique(sap_software_data[[generation_col]]), 10), collapse=", "))
+#   
+#   # Replicate exactly how exploration software is detected in your engineering script
+#   exploration_pattern <- paste(
+#     "Quickjob", "Customer", "Monitoring", "Calculate",
+#     "Monitor", "Calculation\\(CaaS\\)", "Webcalculation",
+#     "Purchasing", "TruTopsMonitor", "Production",
+#     "Sonstige Fabrication SW", "Cell", "Equipment Manager",
+#     sep = "|"
+#   )
+#   
+#   exploitation_pattern <- paste(
+#     "BOOST", "Weld", "Classic", "Tube", "Bend",
+#     sep = "|"
+#   )
+#   
+#   # Process SAP software data - match exactly with engineering script
+#   sap_sw <- sap_software_data %>%
+#     dplyr::mutate(
+#       ts_customer_id = as.character(.data[[customer_id_col]]),
+#       # From original engineering script for exploration software definition
+#       is_exploration_sw = grepl(
+#         exploration_pattern,
+#         .data[[generation_col]],
+#         ignore.case = TRUE
+#       ),
+#       # From original engineering script for exploitation software definition
+#       is_exploitation_sw = grepl(
+#         exploitation_pattern,
+#         .data[[generation_col]],
+#         ignore.case = TRUE
+#       )
+#     )
+#   
+#   # Log counts directly from SAP data
+#   log_info("Found %d exploration software items in SAP data", 
+#            sum(sap_sw$is_exploration_sw, na.rm = TRUE))
+#   log_info("Found %d exploitation software items in SAP data", 
+#            sum(sap_sw$is_exploitation_sw, na.rm = TRUE))
+#   
+#   # Aggregate software purchases by customer and year - again matching engineering script
+#   sw_yearly <- sap_sw %>%
+#     dplyr::group_by(ts_customer_id, .data[[year_col]]) %>%
+#     dplyr::summarise(
+#       # Total software metrics
+#       ts_sales_sw_num_total = n(),
+#       ts_sales_total_sw = sum(.data[[revenue_col]], na.rm = TRUE),
+#       
+#       # Exploration software metrics
+#       ts_sales_num_sw_explore = sum(is_exploration_sw, na.rm = TRUE),
+#       ts_sales_total_exploration = sum(
+#         ifelse(is_exploration_sw, .data[[revenue_col]], 0),
+#         na.rm = TRUE
+#       ),
+#       
+#       # Exploitation software metrics
+#       ts_sales_num_sw_exploit = sum(is_exploitation_sw, na.rm = TRUE),
+#       ts_sales_total_exploitation = sum(
+#         ifelse(is_exploitation_sw, .data[[revenue_col]], 0),
+#         na.rm = TRUE
+#       ),
+#       
+#       .groups = 'drop'
+#     ) %>%
+#     # Rename the year column to 'year'
+#     dplyr::rename(year = .data[[year_col]])
+#   
+#   # Check if customer_sap_id exists in panel data for joining
+#   join_column <- if ("customer_sap_id" %in% names(panel_data)) {
+#     log_info("Joining software data using customer_sap_id")
+#     c("customer_sap_id" = "ts_customer_id", "year")
+#   } else {
+#     log_info("Joining software data using customer_id")
+#     c("customer_id" = "ts_customer_id", "year")
+#   }
+#   
+#   # Join with panel data
+#   panel_data <- panel_data %>%
+#     dplyr::left_join(
+#       sw_yearly,
+#       by = join_column
+#     )
+#   
+#   # Rest of function remains unchanged...
+#   panel_data <- panel_data %>%
+#     dplyr::group_by(customer_id) %>%
+#     dplyr::mutate(
+#       # Handle relationship periods
+#       across(
+#         starts_with("ts_"),
+#         ~case_when(
+#           relationship_status == "pre_relationship" ~ NA_real_,
+#           relationship_status == "active" ~ coalesce(., 0),
+#           TRUE ~ NA_real_
+#         )
+#       ),
+#       
+#       # Cumulative software metrics
+#       ts_sales_sw_num_total_cum = cumsum(coalesce(ts_sales_sw_num_total, 0)),
+#       ts_sales_num_sw_explore_cum = cumsum(coalesce(ts_sales_num_sw_explore, 0)),
+#       ts_sales_num_sw_exploit_cum = cumsum(coalesce(ts_sales_num_sw_exploit, 0)),
+#       ts_sales_total_sw_cum = cumsum(coalesce(ts_sales_total_sw, 0)),
+#       ts_sales_total_exploration_cum = cumsum(coalesce(ts_sales_total_exploration, 0)),
+#       ts_sales_total_exploitation_cum = cumsum(coalesce(ts_sales_total_exploitation, 0)),
+#       
+#       # Software mix metrics
+#       ts_exploration_ratio = ifelse(
+#         ts_sales_total_sw > 0,
+#         ts_sales_total_exploration / ts_sales_total_sw,
+#         0
+#       ),
+#       ts_exploitation_ratio = ifelse(
+#         ts_sales_total_sw > 0,
+#         ts_sales_total_exploitation / ts_sales_total_sw,
+#         0
+#       ),
+#       
+#       # Calculate first purchase years using SAP data
+#       ts_first_any_sw_year = ifelse(
+#         sum(ts_sales_sw_num_total, na.rm = TRUE) > 0,
+#         min(year[ts_sales_sw_num_total > 0], na.rm = TRUE),
+#         NA_real_
+#       ),
+#       ts_first_explore_year = ifelse(
+#         sum(ts_sales_num_sw_explore, na.rm = TRUE) > 0,
+#         min(year[ts_sales_num_sw_explore > 0], na.rm = TRUE),
+#         NA_real_
+#       ),
+#       ts_first_exploit_year = ifelse(
+#         sum(ts_sales_num_sw_exploit, na.rm = TRUE) > 0,
+#         min(year[ts_sales_num_sw_exploit > 0], na.rm = TRUE),
+#         NA_real_
+#       )
+#     ) %>%
+#     # Fill first purchase years down and up
+#     tidyr::fill(c(ts_first_any_sw_year, ts_first_explore_year, ts_first_exploit_year), 
+#                 .direction = "downup") %>%
+#     dplyr::mutate(
+#       # Treatment indicators from SAP data
+#       ts_ever_purchased_sw = !is.na(ts_first_any_sw_year),
+#       ts_ever_purchased_explore = !is.na(ts_first_explore_year),
+#       ts_ever_purchased_exploit = !is.na(ts_first_exploit_year),
+#       
+#       # Post-treatment period indicators
+#       ts_post_any_sw_period = ifelse(
+#         !is.na(ts_first_any_sw_year) & year >= ts_first_any_sw_year,
+#         1, 0
+#       ),
+#       ts_post_explore_period = ifelse(
+#         !is.na(ts_first_explore_year) & year >= ts_first_explore_year,
+#         1, 0
+#       ),
+#       ts_post_exploit_period = ifelse(
+#         !is.na(ts_first_exploit_year) & year >= ts_first_exploit_year,
+#         1, 0
+#       ),
+#       
+#       # Years since first purchase metrics from SAP data
+#       ts_years_since_any_sw = ifelse(
+#         !is.na(ts_first_any_sw_year),
+#         year - ts_first_any_sw_year,
+#         NA_real_
+#       ),
+#       ts_years_since_explore = ifelse(
+#         !is.na(ts_first_explore_year),
+#         year - ts_first_explore_year,
+#         NA_real_
+#       ),
+#       ts_years_since_exploit = ifelse(
+#         !is.na(ts_first_exploit_year),
+#         year - ts_first_exploit_year,
+#         NA_real_
+#       )
+#     ) %>%
+#     dplyr::ungroup()
+#   
+#   log_info("Added SAP software features")
+#   
+#   if (!"ts_first_explore_year" %in% names(panel_data)) {
+#     log_warn("ts_first_explore_year not created in software features")
+#     # Create dummy variable as fallback
+#     panel_data$ts_first_explore_year <- NA_real_
+#     panel_data$ts_post_explore_period <- 0
+#   }
+#   
+#   return(panel_data)
+# }
+
 add_software_features <- function(panel_data, sap_software_data, customer_data) {
   log_info("Adding SAP software features")
   
-  # Check if data is available
   if (is.null(sap_software_data)) {
     log_warn("SAP software data is not available, skipping software features")
     return(panel_data)
   }
   
-  # Check data structure
-  check_data_structure(sap_software_data, "SAP software data")
+  # Define exploration pattern exactly as in the engineering script
+  exploration_pattern <- paste(
+    "Quickjob", "Customer", "Monitoring", "Calculate",
+    "Monitor", "Calculation\\(CaaS\\)", "Webcalculation",
+    "Purchasing", "TruTopsMonitor", "Production",
+    "Sonstige Fabrication SW", "Cell", "Equipment Manager",
+    sep = "|"
+  )
   
   # Find required columns
   customer_id_col <- find_column_match(
@@ -870,62 +1359,25 @@ add_software_features <- function(panel_data, sap_software_data, customer_data) 
     c("revenue", "umsatz")
   )
   
-  # Log required columns for reporting
-  required_cols <- c(customer_id_col, year_col, generation_col, revenue_col)
-  log_info("Using columns for software features: %s", paste(required_cols, collapse=", "))
-  
-  # Check if we have the required columns
-  if (any(sapply(required_cols, is.null))) {
-    missing_cols <- required_cols[sapply(required_cols, is.null)]
-    log_warn("Missing required columns for software features: %s", 
-             paste(missing_cols, collapse=", "))
-    return(panel_data)
-  }
-  
-  # Add debug info for exploration pattern detection in SAP data
-  log_info("Checking for exploration patterns in SAP data column: %s", generation_col)
-  log_info("Sample generation values: %s", 
-           paste(head(unique(sap_software_data[[generation_col]]), 10), collapse=", "))
-  
-  # Replicate exactly how exploration software is detected in your engineering script
-  exploration_pattern <- paste(
-    "Quickjob", "Customer", "Monitoring", "Calculate",
-    "Monitor", "Calculation\\(CaaS\\)", "Webcalculation",
-    "Purchasing", "TruTopsMonitor", "Production",
-    "Sonstige Fabrication SW", "Cell", "Equipment Manager",
-    sep = "|"
-  )
-  
-  exploitation_pattern <- paste(
-    "BOOST", "Weld", "Classic", "Tube", "Bend",
-    sep = "|"
-  )
-  
-  # Process SAP software data - match exactly with engineering script
+  # Process SAP software data - replicating the engineering script approach
   sap_sw <- sap_software_data %>%
     dplyr::mutate(
       ts_customer_id = as.character(.data[[customer_id_col]]),
-      # From original engineering script for exploration software definition
+      # Identify exploration software exactly as in engineering script
       is_exploration_sw = grepl(
         exploration_pattern,
         .data[[generation_col]],
         ignore.case = TRUE
       ),
-      # From original engineering script for exploitation software definition
+      # Identify exploitation software
       is_exploitation_sw = grepl(
-        exploitation_pattern,
+        "BOOST|Weld|Classic|Tube|Bend",
         .data[[generation_col]],
         ignore.case = TRUE
       )
     )
   
-  # Log counts directly from SAP data
-  log_info("Found %d exploration software items in SAP data", 
-           sum(sap_sw$is_exploration_sw, na.rm = TRUE))
-  log_info("Found %d exploitation software items in SAP data", 
-           sum(sap_sw$is_exploitation_sw, na.rm = TRUE))
-  
-  # Aggregate software purchases by customer and year - again matching engineering script
+  # Create yearly aggregates for software purchases
   sw_yearly <- sap_sw %>%
     dplyr::group_by(ts_customer_id, .data[[year_col]]) %>%
     dplyr::summarise(
@@ -949,10 +1401,13 @@ add_software_features <- function(panel_data, sap_software_data, customer_data) 
       
       .groups = 'drop'
     ) %>%
-    # Rename the year column to 'year'
     dplyr::rename(year = .data[[year_col]])
   
-  # Check if customer_sap_id exists in panel data for joining
+  # Log some stats about exploration purchases
+  log_info("Found %d exploration software purchases", 
+           sum(sw_yearly$ts_sales_num_sw_explore, na.rm = TRUE))
+  
+  # Join with panel data
   join_column <- if ("customer_sap_id" %in% names(panel_data)) {
     log_info("Joining software data using customer_sap_id")
     c("customer_sap_id" = "ts_customer_id", "year")
@@ -961,18 +1416,17 @@ add_software_features <- function(panel_data, sap_software_data, customer_data) 
     c("customer_id" = "ts_customer_id", "year")
   }
   
-  # Join with panel data
   panel_data <- panel_data %>%
     dplyr::left_join(
       sw_yearly,
       by = join_column
     )
   
-  # Rest of function remains unchanged...
+  # Calculate cumulative metrics and first purchase years
   panel_data <- panel_data %>%
     dplyr::group_by(customer_id) %>%
     dplyr::mutate(
-      # Handle relationship periods
+      # Replace NAs with 0s for active relationship periods
       across(
         starts_with("ts_"),
         ~case_when(
@@ -982,7 +1436,7 @@ add_software_features <- function(panel_data, sap_software_data, customer_data) 
         )
       ),
       
-      # Cumulative software metrics
+      # Cumulative metrics
       ts_sales_sw_num_total_cum = cumsum(coalesce(ts_sales_sw_num_total, 0)),
       ts_sales_num_sw_explore_cum = cumsum(coalesce(ts_sales_num_sw_explore, 0)),
       ts_sales_num_sw_exploit_cum = cumsum(coalesce(ts_sales_num_sw_exploit, 0)),
@@ -990,19 +1444,7 @@ add_software_features <- function(panel_data, sap_software_data, customer_data) 
       ts_sales_total_exploration_cum = cumsum(coalesce(ts_sales_total_exploration, 0)),
       ts_sales_total_exploitation_cum = cumsum(coalesce(ts_sales_total_exploitation, 0)),
       
-      # Software mix metrics
-      ts_exploration_ratio = ifelse(
-        ts_sales_total_sw > 0,
-        ts_sales_total_exploration / ts_sales_total_sw,
-        0
-      ),
-      ts_exploitation_ratio = ifelse(
-        ts_sales_total_sw > 0,
-        ts_sales_total_exploitation / ts_sales_total_sw,
-        0
-      ),
-      
-      # Calculate first purchase years using SAP data
+      # First purchase years - critical for treatment identification
       ts_first_any_sw_year = ifelse(
         sum(ts_sales_sw_num_total, na.rm = TRUE) > 0,
         min(year[ts_sales_sw_num_total > 0], na.rm = TRUE),
@@ -1018,17 +1460,19 @@ add_software_features <- function(panel_data, sap_software_data, customer_data) 
         min(year[ts_sales_num_sw_exploit > 0], na.rm = TRUE),
         NA_real_
       )
-    ) %>%
-    # Fill first purchase years down and up
+    )
+  
+  # Fill first purchase years down and up within each customer
+  panel_data <- panel_data %>%
     tidyr::fill(c(ts_first_any_sw_year, ts_first_explore_year, ts_first_exploit_year), 
                 .direction = "downup") %>%
     dplyr::mutate(
-      # Treatment indicators from SAP data
+      # Treatment indicators
       ts_ever_purchased_sw = !is.na(ts_first_any_sw_year),
       ts_ever_purchased_explore = !is.na(ts_first_explore_year),
       ts_ever_purchased_exploit = !is.na(ts_first_exploit_year),
       
-      # Post-treatment period indicators
+      # Post-treatment period indicators - these are crucial
       ts_post_any_sw_period = ifelse(
         !is.na(ts_first_any_sw_year) & year >= ts_first_any_sw_year,
         1, 0
@@ -1042,7 +1486,7 @@ add_software_features <- function(panel_data, sap_software_data, customer_data) 
         1, 0
       ),
       
-      # Years since first purchase metrics from SAP data
+      # Years since first purchase metrics - these will be used in time_to_treat
       ts_years_since_any_sw = ifelse(
         !is.na(ts_first_any_sw_year),
         year - ts_first_any_sw_year,
@@ -1063,11 +1507,13 @@ add_software_features <- function(panel_data, sap_software_data, customer_data) 
   
   log_info("Added SAP software features")
   
-  if (!"ts_first_explore_year" %in% names(panel_data)) {
+  # Debug
+  if("ts_first_explore_year" %in% names(panel_data)) {
+    num_explore_purchasers <- sum(!is.na(panel_data$ts_first_explore_year))
+    log_info("Found %d customers with exploration software purchases", 
+             length(unique(panel_data$customer_id[!is.na(panel_data$ts_first_explore_year)])))
+  } else {
     log_warn("ts_first_explore_year not created in software features")
-    # Create dummy variable as fallback
-    panel_data$ts_first_explore_year <- NA_real_
-    panel_data$ts_post_explore_period <- 0
   }
   
   return(panel_data)
@@ -1962,22 +2408,167 @@ add_installed_base_features <- function(panel_data, sis_installed_base_data,
 #'
 #' @param panel_data Panel data
 #' @return Panel with temporal and relationship features added
+# add_temporal_features <- function(panel_data) {
+#   log_info("Adding temporal and relationship features")
+#   # log_info("Available columns for temporal features: %s", 
+#   #          paste(head(sort(names(panel_data)), 20), collapse=", "))
+#   # log_info("Checking for ts_first_explore_year: %s", 
+#   #          "ts_first_explore_year" %in% names(panel_data))
+#   # log_info("Checking for first_exploration_purchase_year: %s", 
+#   #          "first_exploration_purchase_year" %in% names(panel_data))
+#   # log_info("Adding temporal and relationship features")
+#   
+#   # Process temporal features
+#   panel_data <- panel_data %>%
+#     dplyr::arrange(customer_id, year) %>%
+#     dplyr::group_by(customer_id) %>%
+#     dplyr::mutate(
+#       # Customer tenure calculation - IMPROVED VERSION
+#       first_purchase_year = if(any(relationship_status == "active", na.rm = TRUE)) {
+#         min(year[relationship_status == "active"], na.rm = TRUE)
+#       } else {
+#         NA_real_
+#       },
+#       
+#       # Base customer tenure on first purchase (not first contact)
+#       customer_tenure = ifelse(
+#         relationship_status == "active" & !is.na(first_purchase_year),
+#         year - first_purchase_year + 1,
+#         0
+#       ),
+#       
+#       # Calculate pre-purchase history length (how long they were prospects)
+#       prospect_tenure = ifelse(
+#         relationship_status == "pre_relationship" & !is.na(first_purchase_year),
+#         first_purchase_year - year,
+#         0
+#       ),
+#       
+#       # First check which columns exist for treatment year calculation
+#       has_sap_data = "ts_first_explore_year" %in% names(panel_data),
+#       has_opp_data = "first_exploration_purchase_year" %in% names(panel_data),
+#       
+#       # Calculate treatment timeline variables using pre-checked columns
+#       treatment_year = case_when(
+#         # Use SAP data if available
+#         has_sap_data & !is.na(ts_first_explore_year) ~ ts_first_explore_year,
+#         # Use opportunities data as fallback
+#         has_opp_data & !is.na(first_exploration_purchase_year) ~ first_exploration_purchase_year,
+#         # Otherwise, set to NA
+#         TRUE ~ NA_real_
+#       ),
+#       
+#       # Calculate time since first purchase - critical for measuring lock-in
+#       years_since_first_purchase = ifelse(
+#         !is.na(first_purchase_year),
+#         year - first_purchase_year,
+#         NA_real_
+#       ),
+#       
+#       # Calculate time-to-treatment (relative to first purchase)
+#       time_to_treat = case_when(
+#         is.na(treatment_year) ~ NA_real_,  # No treatment year, no time-to-treat
+#         TRUE ~ year - treatment_year
+#       ),
+#       
+#       # Calculate relationship length at treatment (for matching)
+#       customer_relationship_length_at_treatment = ifelse(
+#         time_to_treat == 0 & !is.na(customer_tenure), 
+#         customer_tenure, 
+#         NA_real_
+#       )
+#     )
+#   
+#   # Check if opportunity purchase metrics exist before calculating purchase metrics
+#   if (any(c("to_sum_opps_won", "to_sum_opps_won_cum") %in% names(panel_data))) {
+#     panel_data <- panel_data %>%
+#       dplyr::mutate(
+#         # Purchase dating and recency metrics
+#         ft_purchase_at_t_date = case_when(
+#           # First purchase based on won opportunities
+#           "to_sum_opps_won_cum" %in% names(panel_data) && 
+#             (lag(to_sum_opps_won_cum) == 0 | is.na(lag(to_sum_opps_won_cum))) & 
+#             to_sum_opps_won_cum > 0 ~ year,
+#           # First purchase based on registered products if they exist
+#           "erp_registered_product_cum" %in% names(panel_data) && 
+#             (lag(erp_registered_product_cum) == 0 | is.na(lag(erp_registered_product_cum))) & 
+#             erp_registered_product_cum > 0 ~ year,
+#           "Manual_Registered_Product_cum" %in% names(panel_data) && 
+#             (lag(Manual_Registered_Product_cum) == 0 | is.na(lag(Manual_Registered_Product_cum))) & 
+#             Manual_Registered_Product_cum > 0 ~ year,
+#           TRUE ~ NA_real_
+#         ),
+#         
+#         lt_purchase_at_T_date = ifelse("to_sum_opps_won" %in% names(panel_data) && 
+#                                          to_sum_opps_won > 0, year, NA_real_)
+#       )
+#     
+#     # Fill purchase date info down
+#     panel_data <- panel_data %>%
+#       tidyr::fill(c(ft_purchase_at_t_date, lt_purchase_at_T_date), .direction = "down")
+#   }
+#   
+#   # Calculate software and relationship duration metrics if applicable
+#   if ("ts_first_exploit_year" %in% names(panel_data)) {
+#     panel_data <- panel_data %>%
+#       dplyr::mutate(
+#         ft_purchase_exploit = as.integer(!is.na(ts_first_exploit_year)),
+#         exploit_duration_ft_purchase = ifelse(
+#           !is.na(ts_first_exploit_year),
+#           year - ts_first_exploit_year,
+#           0
+#         )
+#       )
+#   }
+#   
+#   if ("ts_first_explore_year" %in% names(panel_data)) {
+#     panel_data <- panel_data %>%
+#       dplyr::mutate(
+#         ft_purchase_explore = as.integer(!is.na(ts_first_explore_year)),
+#         explore_duration_ft_purchase = ifelse(
+#           !is.na(ts_first_explore_year),
+#           year - ts_first_explore_year,
+#           0
+#         )
+#       )
+#   }
+#   
+#   if ("ft_purchase_at_t_date" %in% names(panel_data)) {
+#     panel_data <- panel_data %>%
+#       dplyr::mutate(
+#         customer_duration_ft_purchase = ifelse(
+#           !is.na(ft_purchase_at_t_date),
+#           year - ft_purchase_at_t_date,
+#           0
+#         )
+#       )
+#   }
+#   
+#   if ("lt_purchase_at_T_date" %in% names(panel_data)) {
+#     panel_data <- panel_data %>%
+#       dplyr::mutate(
+#         duration_since_last_purchase = year - lag(lt_purchase_at_T_date)
+#       )
+#   }
+#   
+#   # Fill customer relationship length at treatment
+#   panel_data <- panel_data %>%
+#     tidyr::fill(customer_relationship_length_at_treatment, .direction = "downup") %>%
+#     dplyr::ungroup()
+#   
+#   log_info("Added temporal features")
+#   return(panel_data)
+# }
+
 add_temporal_features <- function(panel_data) {
   log_info("Adding temporal and relationship features")
-  # log_info("Available columns for temporal features: %s", 
-  #          paste(head(sort(names(panel_data)), 20), collapse=", "))
-  # log_info("Checking for ts_first_explore_year: %s", 
-  #          "ts_first_explore_year" %in% names(panel_data))
-  # log_info("Checking for first_exploration_purchase_year: %s", 
-  #          "first_exploration_purchase_year" %in% names(panel_data))
-  # log_info("Adding temporal and relationship features")
   
   # Process temporal features
   panel_data <- panel_data %>%
     dplyr::arrange(customer_id, year) %>%
     dplyr::group_by(customer_id) %>%
     dplyr::mutate(
-      # Customer tenure calculation - IMPROVED VERSION
+      # Customer tenure calculation
       first_purchase_year = if(any(relationship_status == "active", na.rm = TRUE)) {
         min(year[relationship_status == "active"], na.rm = TRUE)
       } else {
@@ -1998,75 +2589,102 @@ add_temporal_features <- function(panel_data) {
         0
       ),
       
-      # First check which columns exist for treatment year calculation
-      has_sap_data = "ts_first_explore_year" %in% names(panel_data),
-      has_opp_data = "first_exploration_purchase_year" %in% names(panel_data),
-      
-      # Calculate treatment timeline variables using pre-checked columns
-      treatment_year = case_when(
-        # Use SAP data if available
-        has_sap_data & !is.na(ts_first_explore_year) ~ ts_first_explore_year,
-        # Use opportunities data as fallback
-        has_opp_data & !is.na(first_exploration_purchase_year) ~ first_exploration_purchase_year,
-        # Otherwise, set to NA
-        TRUE ~ NA_real_
-      ),
-      
       # Calculate time since first purchase - critical for measuring lock-in
       years_since_first_purchase = ifelse(
         !is.na(first_purchase_year),
         year - first_purchase_year,
         NA_real_
-      ),
-      
-      # Calculate time-to-treatment (relative to first purchase)
-      time_to_treat = case_when(
-        is.na(treatment_year) ~ NA_real_,  # No treatment year, no time-to-treat
-        TRUE ~ year - treatment_year
-      ),
-      
-      # Calculate relationship length at treatment (for matching)
-      customer_relationship_length_at_treatment = ifelse(
-        time_to_treat == 0 & !is.na(customer_tenure), 
-        customer_tenure, 
-        NA_real_
       )
     )
   
-  # Check if opportunity purchase metrics exist before calculating purchase metrics
-  if (any(c("to_sum_opps_won", "to_sum_opps_won_cum") %in% names(panel_data))) {
+  # Check if SAP software data variables exist and calculate time-to-treat
+  if (all(c("ts_first_explore_year", "ts_years_since_explore") %in% names(panel_data))) {
     panel_data <- panel_data %>%
       dplyr::mutate(
-        # Purchase dating and recency metrics
-        ft_purchase_at_t_date = case_when(
-          # First purchase based on won opportunities
-          "to_sum_opps_won_cum" %in% names(panel_data) && 
-            (lag(to_sum_opps_won_cum) == 0 | is.na(lag(to_sum_opps_won_cum))) & 
-            to_sum_opps_won_cum > 0 ~ year,
-          # First purchase based on registered products if they exist
-          "erp_registered_product_cum" %in% names(panel_data) && 
-            (lag(erp_registered_product_cum) == 0 | is.na(lag(erp_registered_product_cum))) & 
-            erp_registered_product_cum > 0 ~ year,
-          "Manual_Registered_Product_cum" %in% names(panel_data) && 
-            (lag(Manual_Registered_Product_cum) == 0 | is.na(lag(Manual_Registered_Product_cum))) & 
-            Manual_Registered_Product_cum > 0 ~ year,
-          TRUE ~ NA_real_
+        # Calculate time-to-treatment based on SAP data
+        time_to_treat = ifelse(
+          !is.na(ts_first_explore_year), 
+          ts_years_since_explore,
+          NA_real_
         ),
         
-        lt_purchase_at_T_date = ifelse("to_sum_opps_won" %in% names(panel_data) && 
-                                         to_sum_opps_won > 0, year, NA_real_)
+        # Calculate relationship length at treatment (for matching)
+        customer_relationship_length_at_treatment = ifelse(
+          !is.na(time_to_treat) & time_to_treat == 0 & !is.na(customer_tenure), 
+          customer_tenure, 
+          NA_real_
+        )
       )
-    
-    # Fill purchase date info down
-    panel_data <- panel_data %>%
-      tidyr::fill(c(ft_purchase_at_t_date, lt_purchase_at_T_date), .direction = "down")
   }
+  
+  # Calculate first purchase date - use separate checks to avoid case_when() issues
+  panel_data <- panel_data %>%
+    dplyr::mutate(
+      # Initialize with NA
+      ft_purchase_at_t_date = NA_real_,
+      lt_purchase_at_T_date = NA_real_
+    )
+  
+  # Add won opportunities first purchase if column exists
+  if ("to_sum_opps_won_cum" %in% names(panel_data)) {
+    panel_data <- panel_data %>%
+      dplyr::mutate(
+        ft_purchase_at_t_date = ifelse(
+          (lag(to_sum_opps_won_cum, default = 0) == 0) & to_sum_opps_won_cum > 0,
+          year,
+          ft_purchase_at_t_date
+        )
+      )
+  }
+  
+  # Add registered products first purchase if column exists
+  if ("ERP_Registered_Product_cum" %in% names(panel_data)) {
+    panel_data <- panel_data %>%
+      dplyr::mutate(
+        ft_purchase_at_t_date = ifelse(
+          is.na(ft_purchase_at_t_date) & 
+            (lag(ERP_Registered_Product_cum, default = 0) == 0) & 
+            ERP_Registered_Product_cum > 0,
+          year,
+          ft_purchase_at_t_date
+        )
+      )
+  }
+  
+  # Add manually registered products if column exists
+  if ("Manual_Registered_Product_cum" %in% names(panel_data)) {
+    panel_data <- panel_data %>%
+      dplyr::mutate(
+        ft_purchase_at_t_date = ifelse(
+          is.na(ft_purchase_at_t_date) & 
+            (lag(Manual_Registered_Product_cum, default = 0) == 0) & 
+            Manual_Registered_Product_cum > 0,
+          year,
+          ft_purchase_at_t_date
+        )
+      )
+  }
+  
+  # Add latest purchase date if column exists
+  if ("to_sum_opps_won" %in% names(panel_data)) {
+    panel_data <- panel_data %>%
+      dplyr::mutate(
+        lt_purchase_at_T_date = ifelse(
+          to_sum_opps_won > 0,
+          year,
+          lt_purchase_at_T_date
+        )
+      )
+  }
+  
+  # Fill purchase date info
+  panel_data <- panel_data %>%
+    tidyr::fill(c(ft_purchase_at_t_date, lt_purchase_at_T_date), .direction = "down")
   
   # Calculate software and relationship duration metrics if applicable
   if ("ts_first_exploit_year" %in% names(panel_data)) {
     panel_data <- panel_data %>%
       dplyr::mutate(
-        ft_purchase_exploit = as.integer(!is.na(ts_first_exploit_year)),
         exploit_duration_ft_purchase = ifelse(
           !is.na(ts_first_exploit_year),
           year - ts_first_exploit_year,
@@ -2078,7 +2696,6 @@ add_temporal_features <- function(panel_data) {
   if ("ts_first_explore_year" %in% names(panel_data)) {
     panel_data <- panel_data %>%
       dplyr::mutate(
-        ft_purchase_explore = as.integer(!is.na(ts_first_explore_year)),
         explore_duration_ft_purchase = ifelse(
           !is.na(ts_first_explore_year),
           year - ts_first_explore_year,
@@ -2087,6 +2704,7 @@ add_temporal_features <- function(panel_data) {
       )
   }
   
+  # Calculate customer duration
   if ("ft_purchase_at_t_date" %in% names(panel_data)) {
     panel_data <- panel_data %>%
       dplyr::mutate(
@@ -2098,16 +2716,28 @@ add_temporal_features <- function(panel_data) {
       )
   }
   
-  if ("lt_purchase_at_T_date" %in% names(panel_data)) {
-    panel_data <- panel_data %>%
-      dplyr::mutate(
-        duration_since_last_purchase = year - lag(lt_purchase_at_T_date)
+  # Calculate time since last purchase - safely
+  panel_data <- panel_data %>%
+    dplyr::mutate(
+      # Create a temporary variable for previous purchase year
+      prev_purchase_year = dplyr::lag(lt_purchase_at_T_date),
+      
+      # Calculate duration since last purchase safely
+      duration_since_last_purchase = ifelse(
+        !is.na(prev_purchase_year),
+        year - prev_purchase_year,
+        NA_real_
       )
-  }
+    ) %>%
+    dplyr::select(-prev_purchase_year)  # Remove temporary column
   
   # Fill customer relationship length at treatment
+  if ("customer_relationship_length_at_treatment" %in% names(panel_data)) {
+    panel_data <- panel_data %>%
+      tidyr::fill(customer_relationship_length_at_treatment, .direction = "downup")
+  }
+  
   panel_data <- panel_data %>%
-    tidyr::fill(customer_relationship_length_at_treatment, .direction = "downup") %>%
     dplyr::ungroup()
   
   log_info("Added temporal features")
@@ -2191,52 +2821,46 @@ add_treatment_variables <- function(panel_data) {
   log_info("Adding treatment definition variables")
   
   # Check for required variables
-  required_vars <- c("time_to_treat", "customer_tenure", "first_purchase_year")
+  required_vars <- c("ts_years_since_explore", "customer_tenure", "ts_first_explore_year", "ts_post_explore_period")
   missing_vars <- setdiff(required_vars, names(panel_data))
   
   if (length(missing_vars) > 0) {
-    log_error("Required variables missing: %s", paste(missing_vars, collapse=", "))
-    # Create minimal fallback variables
-    panel_data$treatment <- 0
-    panel_data$post_period <- 0
-    panel_data$ever_treated <- 0
-    return(panel_data)
+    log_warn("Required variables missing for treatment definition: %s", paste(missing_vars, collapse=", "))
+    # Create fallback variables if necessary
+    if (!"ts_post_explore_period" %in% names(panel_data) && "ts_first_explore_year" %in% names(panel_data)) {
+      panel_data <- panel_data %>%
+        dplyr::mutate(
+          ts_post_explore_period = ifelse(
+            !is.na(ts_first_explore_year) & year >= ts_first_explore_year,
+            1, 0
+          )
+        )
+      log_info("Created fallback ts_post_explore_period variable")
+    }
   }
   
-  # First check which columns exist
-  has_ts_post_explore <- "ts_post_explore_period" %in% names(panel_data)
-  has_post_explore <- "post_exploration_period" %in% names(panel_data)
-  has_ts_ever_purchased <- "ts_ever_purchased_explore" %in% names(panel_data)
-  has_ever_purchased <- "ever_purchased_exploration" %in% names(panel_data)
-  
-  # Check for hardware purchase indicator
-  has_hw_purchase <- "to_value_hw_mt_standalone" %in% names(panel_data) || 
-    "to_value_hw_lt_standalone" %in% names(panel_data)
-  
-  # Define the treatment variables with enhanced customer relationship focus
+  # Define treatment variables
   panel_data <- panel_data %>%
+    dplyr::group_by(customer_id) %>%
     dplyr::mutate(
-      # Has ever purchased hardware (precondition for lock-in)
-      ever_purchased_hardware = if (has_hw_purchase) {
-        cumsum(to_value_hw_mt_standalone + to_value_hw_lt_standalone) > 0
-      } else {
-        # Fallback using available data
-        customer_tenure > 0
-      },
+      # Define main treatment variable - exploration software purchase
+      # This replicates the logic from the engineering.R script
+      treatment = ifelse(ts_post_explore_period == 1, 1, 0),
       
-      # Define treatment (exploration software purchase) only for hardware customers
-      treatment = case_when(
-        !ever_purchased_hardware ~ 0,  # No hardware, no treatment
-        has_ts_post_explore & !is.na(ts_post_explore_period) & ts_post_explore_period == 1 ~ 1,
-        has_post_explore & !is.na(post_exploration_period) & post_exploration_period == 1 ~ 1,
-        TRUE ~ 0
+      # Calculate time-to-treat using the same logic as engineering.R
+      time_to_treat = case_when(
+        !is.na(ts_first_explore_year) ~ ts_years_since_explore,
+        year == 2014 ~ 0,
+        TRUE ~ year - 2014
       ),
       
-      # Treatment timing metrics
-      time_since_treatment = ifelse(treatment == 1, time_to_treat, NA_real_),
+      # Define pre/post periods for diff-in-diff analysis
       post_period = ifelse(time_to_treat >= 0, 1, 0),
       
-      # Pre/post treatment period indicators for event study
+      # Treatment indicator - any customer who ever purchased exploration software
+      ever_treated = ifelse(!is.na(ts_first_explore_year), 1, 0),
+      
+      # Create period indicators for event studies
       pre_treatment_1 = ifelse(time_to_treat == -1, 1, 0),
       pre_treatment_2 = ifelse(time_to_treat == -2, 1, 0),
       pre_treatment_3plus = ifelse(time_to_treat <= -3, 1, 0),
@@ -2246,18 +2870,26 @@ add_treatment_variables <- function(panel_data) {
       post_treatment_2 = ifelse(time_to_treat == 2, 1, 0),
       post_treatment_3plus = ifelse(time_to_treat >= 3, 1, 0),
       
-      # Define ever treated indicator with hardware purchase condition
-      ever_treated = case_when(
-        !ever_purchased_hardware ~ 0,  # No hardware, not treated
-        has_ts_ever_purchased & !is.na(ts_ever_purchased_explore) & ts_ever_purchased_explore ~ 1,
-        has_ever_purchased & !is.na(ever_purchased_exploration) & ever_purchased_exploration ~ 1,
-        TRUE ~ 0
+      # For matching - capture relationship length at treatment time
+      customer_relationship_length_at_treatment = ifelse(
+        time_to_treat == 0 & !is.na(customer_tenure),
+        customer_tenure,
+        NA_real_
       )
     )
   
-  log_info("Added treatment variables")
-  log_info("Treatment summary: %d treated observations out of %d total", 
-           sum(panel_data$treatment, na.rm = TRUE), nrow(panel_data))
+  # Fill relationship length at treatment time
+  panel_data <- panel_data %>%
+    tidyr::fill(customer_relationship_length_at_treatment, .direction = "downup") %>%
+    dplyr::ungroup()
+  
+  # Log treatment statistics
+  treated_customers <- sum(panel_data$ever_treated, na.rm = TRUE)
+  total_customers <- n_distinct(panel_data$customer_id)
+  log_info("Treatment summary: %d treated customers (%.1f%%) out of %d total", 
+           treated_customers, 
+           treated_customers/total_customers*100,
+           total_customers)
   
   return(panel_data)
 }
@@ -2389,414 +3021,459 @@ clean_panel_dataset <- function(panel_data, min_year = 2007, max_year = 2019,
 #' @param max_year Maximum year to include (default: 2019)
 #' @param country_filter Vector of countries to include (default: "Germany")
 #' @return Complete panel dataset ready for analysis
+# build_panel_dataset <- function(use_checkpoints = TRUE, min_year = 2007, 
+#                                 max_year = 2019, country_filter = "Germany") {
+#   log_info("Starting panel dataset construction for %d-%d", min_year, max_year)
+#   
+#   # 1. Load all necessary data sources
+#   log_info("Loading data sources")
+#   all_data <- load_processed_data()
+#   product_categories <- load_product_categories()
+#   
+#   if (is.null(all_data$opps_data)) {
+#     log_error("Required dataset 'opps_data' not available")
+#     return(NULL)
+#   }
+#   
+#   # 2. Create base panel structure
+#   # if (use_checkpoints) {
+#   #   panel_data <- load_checkpoint("base_panel")
+#   # }
+#   # 
+#   # if (is.null(panel_data)) {
+#   #   # Create the base panel
+#   #   tryCatch({
+#   #     panel_data <- create_base_panel(all_data$opps_data, 
+#   #                                     all_data$customer_data,
+#   #                                     year_range = c(min_year - 5, max_year))
+#   #     if (use_checkpoints) save_checkpoint(panel_data, "base_panel")
+#   #   }, error = function(e) {
+#   #     log_error("Error creating base panel: %s", e$message)
+#   #     stop(paste("Failed to create base panel:", e$message))
+#   #   })
+#   # }
+#   
+#   # 2. Create base panel structure
+#   if (use_checkpoints) {
+#     panel_data <- load_checkpoint("base_panel")
+#   }
+#   
+#   if (is.null(panel_data)) {
+#     # Create the base panel
+#     tryCatch({
+#       # FIXED: Removed the customer_data argument
+#       panel_data <- create_base_panel(all_data$opps_data, 
+#                                       year_range = c(min_year - 5, max_year)) ## Why are we substracting 5 here?
+#       if (use_checkpoints) save_checkpoint(panel_data, "base_panel")
+#     }, error = function(e) {
+#       log_error("Error creating base panel: %s", e$message)
+#       stop(paste("Failed to create base panel:", e$message))
+#     })
+#   }
+#   
+#   # 3. Add customer characteristics
+#   if (use_checkpoints) {
+#     checkpoint_data <- load_checkpoint("customer_chars")
+#     if (!is.null(checkpoint_data)) {
+#       panel_data <- checkpoint_data
+#       log_info("Loaded customer characteristics from checkpoint")
+#     } else {
+#       tryCatch({
+#         panel_data <- add_customer_characteristics(
+#           panel_data, all_data$opps_data, all_data$customer_data
+#         )
+#         if (use_checkpoints) save_checkpoint(panel_data, "customer_chars")
+#       }, error = function(e) {
+#         log_error("Error adding customer characteristics: %s", e$message)
+#         # Provide debug information
+#         log_error("Columns in opportunities data: %s", 
+#                   paste(names(all_data$opps_data), collapse=", "))
+#         stop(paste("Failed to add customer characteristics:", e$message))
+#       })
+#     }
+#   } else {
+#     tryCatch({
+#       panel_data <- add_customer_characteristics(
+#         panel_data, all_data$opps_data, all_data$customer_data
+#       )
+#     }, error = function(e) {
+#       log_error("Error adding customer characteristics: %s", e$message)
+#       stop(paste("Failed to add customer characteristics:", e$message))
+#     })
+#   }
+#   
+#   # 4. Add opportunity features
+#   if (use_checkpoints) {
+#     checkpoint_data <- load_checkpoint("opportunity_features")
+#     if (!is.null(checkpoint_data)) {
+#       panel_data <- checkpoint_data
+#       log_info("Loaded opportunity features from checkpoint")
+#     } else {
+#       tryCatch({
+#         panel_data <- add_opportunity_features(
+#           panel_data, all_data$opps_data, product_categories
+#         )
+#         if (use_checkpoints) save_checkpoint(panel_data, "opportunity_features")
+#       }, error = function(e) {
+#         log_error("Error adding opportunity features: %s", e$message)
+#         stop(paste("Failed to add opportunity features:", e$message))
+#       })
+#     }
+#   } else {
+#     tryCatch({
+#       panel_data <- add_opportunity_features(
+#         panel_data, all_data$opps_data, product_categories
+#       )
+#     }, error = function(e) {
+#       log_error("Error adding opportunity features: %s", e$message)
+#       stop(paste("Failed to add opportunity features:", e$message))
+#     })
+#   }
+#   
+#   # 5. Add software features
+#   if (use_checkpoints) {
+#     checkpoint_data <- load_checkpoint("software_features")
+#     if (!is.null(checkpoint_data)) {
+#       panel_data <- checkpoint_data
+#       log_info("Loaded software features from checkpoint")
+#     } else {
+#       tryCatch({
+#         panel_data <- add_software_features(
+#           panel_data, all_data$sap_software, all_data$customer_data
+#         )
+#         if (use_checkpoints) save_checkpoint(panel_data, "software_features")
+#       }, error = function(e) {
+#         log_error("Error adding software features: %s", e$message)
+#         stop(paste("Failed to add software features:", e$message))
+#       })
+#     }
+#   } else {
+#     tryCatch({
+#       panel_data <- add_software_features(
+#         panel_data, all_data$sap_software, all_data$customer_data
+#       )
+#     }, error = function(e) {
+#       log_error("Error adding software features: %s", e$message)
+#       stop(paste("Failed to add software features:", e$message))
+#     })
+#   }
+#   
+#   # 6. Add interaction features - with better error handling
+#   if (use_checkpoints) {
+#     checkpoint_data <- load_checkpoint("interaction_features")
+#     if (!is.null(checkpoint_data)) {
+#       panel_data <- checkpoint_data
+#       log_info("Loaded interaction features from checkpoint")
+#     } else {
+#       tryCatch({
+#         # Try with all data first
+#         log_info("Adding interaction features")
+#         panel_data <- add_interaction_features(
+#           panel_data, all_data$meetings_data, all_data$mails_data, all_data$other_act_data
+#         )
+#         if (use_checkpoints) save_checkpoint(panel_data, "interaction_features")
+#       }, error = function(e) {
+#         log_error("Error adding interaction features: %s", e$message)
+#         if (use_checkpoints) save_checkpoint(panel_data, "interaction_features_error")
+#         
+#         # Try without other activities data
+#         log_warn("Trying to continue without other_act_data")
+#         tryCatch({
+#           panel_data <- add_interaction_features(
+#             panel_data, all_data$meetings_data, all_data$mails_data, NULL
+#           )
+#           if (use_checkpoints) save_checkpoint(panel_data, "interaction_features_partial")
+#         }, error = function(e2) {
+#           log_error("Still failed to add interaction features: %s", e2$message)
+#           
+#           # Try with completely minimal interaction features
+#           log_warn("Creating minimal interaction features as fallback")
+#           panel_data$completed_meetings_num_total <- 0
+#           panel_data$mails_total <- 0
+#           panel_data$other_act_phone_calls <- 0
+#           panel_data$other_act_letters <- 0
+#           panel_data$other_act_faxes <- 0
+#           panel_data$sales_act_synchronous <- 0
+#           panel_data$sales_act_asynchronous <- 0
+#           panel_data$aggregated_sales_act <- 0
+#           panel_data$effort_to_revenue_ratio <- 0
+#           panel_data$lagged_effort_to_revenue_ratio <- 0
+#           panel_data$rolling_interactions_3yr <- NA_real_
+#           panel_data$rolling_efforts_3yr <- NA_real_
+#           
+#           log_info("Created minimal interaction features")
+#           if (use_checkpoints) save_checkpoint(panel_data, "interaction_features_minimal")
+#           
+#           # Don't stop the process, continue with minimal features
+#         })
+#       })
+#     }
+#   } else {
+#     # No checkpoints, but still use error handling
+#     tryCatch({
+#       panel_data <- add_interaction_features(
+#         panel_data, all_data$meetings_data, all_data$mails_data, all_data$other_act_data
+#       )
+#     }, error = function(e) {
+#       log_error("Error adding interaction features: %s", e$message)
+#       
+#       # Try without other activities data
+#       log_warn("Trying to continue without other_act_data")
+#       tryCatch({
+#         panel_data <- add_interaction_features(
+#           panel_data, all_data$meetings_data, all_data$mails_data, NULL
+#         )
+#       }, error = function(e2) {
+#         log_error("Still failed to add interaction features: %s", e2$message)
+#         
+#         # Create minimal interaction features as fallback
+#         log_warn("Creating minimal interaction features as fallback")
+#         panel_data$completed_meetings_num_total <- 0
+#         panel_data$mails_total <- 0
+#         panel_data$other_act_phone_calls <- 0
+#         panel_data$other_act_letters <- 0
+#         panel_data$other_act_faxes <- 0
+#         panel_data$sales_act_synchronous <- 0
+#         panel_data$sales_act_asynchronous <- 0
+#         panel_data$aggregated_sales_act <- 0
+#         panel_data$effort_to_revenue_ratio <- 0
+#         panel_data$lagged_effort_to_revenue_ratio <- 0
+#         panel_data$rolling_interactions_3yr <- NA_real_
+#         panel_data$rolling_efforts_3yr <- NA_real_
+#         
+#         log_info("Created minimal interaction features")
+#       })
+#     })
+#   }
+#   
+#   # 7. Add service features
+#   if (use_checkpoints) {
+#     checkpoint_data <- load_checkpoint("service_features")
+#     if (!is.null(checkpoint_data)) {
+#       panel_data <- checkpoint_data
+#       log_info("Loaded service features from checkpoint")
+#     } else {
+#       tryCatch({
+#         panel_data <- add_service_features(
+#           panel_data, all_data$sis_cases, all_data$sis_missions, all_data$customer_data
+#         )
+#         if (use_checkpoints) save_checkpoint(panel_data, "service_features")
+#       }, error = function(e) {
+#         log_error("Error adding service features: %s", e$message)
+#         # Continue with process, service features are not critical
+#         log_warn("Continuing without service features")
+#       })
+#     }
+#   } else {
+#     tryCatch({
+#       panel_data <- add_service_features(
+#         panel_data, all_data$sis_cases, all_data$sis_missions, all_data$customer_data
+#       )
+#     }, error = function(e) {
+#       log_error("Error adding service features: %s", e$message)
+#       # Continue with process
+#       log_warn("Continuing without service features")
+#     })
+#   }
+#   
+#   # 8. Add installed base features
+#   if (use_checkpoints) {
+#     checkpoint_data <- load_checkpoint("installed_base_features")
+#     if (!is.null(checkpoint_data)) {
+#       panel_data <- checkpoint_data
+#       log_info("Loaded installed base features from checkpoint")
+#     } else {
+#       tryCatch({
+#         panel_data <- add_installed_base_features(
+#           panel_data, all_data$sis_installed_base, all_data$reg_products, all_data$customer_data
+#         )
+#         if (use_checkpoints) save_checkpoint(panel_data, "installed_base_features")
+#       }, error = function(e) {
+#         log_error("Error adding installed base features: %s", e$message)
+#         # Continue with process
+#         log_warn("Continuing without installed base features")
+#       })
+#     }
+#   } else {
+#     tryCatch({
+#       panel_data <- add_installed_base_features(
+#         panel_data, all_data$sis_installed_base, all_data$reg_products, all_data$customer_data
+#       )
+#     }, error = function(e) {
+#       log_error("Error adding installed base features: %s", e$message)
+#       # Continue with process
+#       log_warn("Continuing without installed base features")
+#     })
+#   }
+#   
+#   # 9. Add temporal features
+#   if (use_checkpoints) {
+#     checkpoint_data <- load_checkpoint("temporal_features")
+#     if (!is.null(checkpoint_data)) {
+#       panel_data <- checkpoint_data
+#       log_info("Loaded temporal features from checkpoint")
+#     } else {
+#       tryCatch({
+#         panel_data <- add_temporal_features(panel_data)
+#         if (use_checkpoints) save_checkpoint(panel_data, "temporal_features")
+#       }, error = function(e) {
+#         log_error("Error adding temporal features: %s", e$message)
+#         # This is more critical, but continue with basic temporal features
+#         log_warn("Adding minimal temporal features as fallback")
+#         panel_data <- panel_data %>%
+#           dplyr::group_by(customer_id) %>%
+#           dplyr::mutate(
+#             customer_tenure = 1,
+#             time_to_treat = 0
+#           ) %>%
+#           dplyr::ungroup()
+#       })
+#     }
+#   } else {
+#     tryCatch({
+#       panel_data <- add_temporal_features(panel_data)
+#     }, error = function(e) {
+#       log_error("Error adding temporal features: %s", e$message)
+#       # Add minimal temporal features
+#       log_warn("Adding minimal temporal features as fallback")
+#       panel_data <- panel_data %>%
+#         dplyr::group_by(customer_id) %>%
+#         dplyr::mutate(
+#           customer_tenure = 1,
+#           time_to_treat = 0
+#         ) %>%
+#         dplyr::ungroup()
+#     })
+#   }
+#   
+#   # 10. Add treatment variables
+#   if (use_checkpoints) {
+#     checkpoint_data <- load_checkpoint("treatment_variables")
+#     if (!is.null(checkpoint_data)) {
+#       panel_data <- checkpoint_data
+#       log_info("Loaded treatment variables from checkpoint")
+#     } else {
+#       tryCatch({
+#         panel_data <- add_treatment_variables(panel_data)
+#         if (use_checkpoints) save_checkpoint(panel_data, "treatment_variables")
+#       }, error = function(e) {
+#         log_error("Error adding treatment variables: %s", e$message)
+#         # This is critical, add minimal treatment variables
+#         log_warn("Adding minimal treatment variables as fallback")
+#         panel_data$treatment <- 0
+#         panel_data$post_period <- 0
+#         panel_data$ever_treated <- 0
+#       })
+#     }
+#   } else {
+#     tryCatch({
+#       panel_data <- add_treatment_variables(panel_data)
+#     }, error = function(e) {
+#       log_error("Error adding treatment variables: %s", e$message)
+#       # Add minimal treatment variables
+#       log_warn("Adding minimal treatment variables as fallback")
+#       panel_data$treatment <- 0
+#       panel_data$post_period <- 0
+#       panel_data$ever_treated <- 0
+#     })
+#   }
+#   
+#   # 11. Clean and finalize the panel
+#   if (use_checkpoints) {
+#     checkpoint_data <- load_checkpoint(paste0("final_panel_", min_year, "_", max_year))
+#     if (!is.null(checkpoint_data)) {
+#       panel_data <- checkpoint_data
+#       log_info("Loaded final panel from checkpoint")
+#     } else {
+#       tryCatch({
+#         panel_data <- clean_panel_dataset(
+#           panel_data, min_year = min_year, max_year = max_year, country_filter = country_filter
+#         )
+#         attr(panel_data, "cleaned") <- TRUE
+#         if (use_checkpoints) {
+#           save_checkpoint(panel_data, paste0("final_panel_", min_year, "_", max_year))
+#         }
+#       }, error = function(e) {
+#         log_error("Error cleaning panel dataset: %s", e$message)
+#         # Skip cleaning but still return what we have
+#         log_warn("Returning uncleaned panel")
+#         attr(panel_data, "cleaned") <- FALSE
+#       })
+#     }
+#   } else {
+#     tryCatch({
+#       panel_data <- clean_panel_dataset(
+#         panel_data, min_year = min_year, max_year = max_year, country_filter = country_filter
+#       )
+#       attr(panel_data, "cleaned") <- TRUE
+#     }, error = function(e) {
+#       log_error("Error cleaning panel dataset: %s", e$message)
+#       # Skip cleaning but still return what we have
+#       log_warn("Returning uncleaned panel")
+#       attr(panel_data, "cleaned") <- FALSE
+#     })
+#   }
+#   
+#   # Add metadata
+#   attr(panel_data, "creation_date") <- Sys.Date()
+#   attr(panel_data, "year_range") <- c(min_year, max_year)
+#   attr(panel_data, "countries") <- country_filter
+#   attr(panel_data, "n_customers") <- n_distinct(panel_data$customer_id)
+#   
+#   # Calculate number of treated safely
+#   if ("ever_treated" %in% names(panel_data)) {
+#     attr(panel_data, "n_treated") <- sum(unique(panel_data$ever_treated), na.rm = TRUE)
+#   } else {
+#     attr(panel_data, "n_treated") <- 0
+#   }
+#   
+#   log_info("Panel dataset construction complete: %d rows, %d customers, years %d-%d",
+#            nrow(panel_data), attr(panel_data, "n_customers"), min_year, max_year)
+#   
+#   return(panel_data)
+# }
+
 build_panel_dataset <- function(use_checkpoints = TRUE, min_year = 2007, 
                                 max_year = 2019, country_filter = "Germany") {
   log_info("Starting panel dataset construction for %d-%d", min_year, max_year)
   
-  # 1. Load all necessary data sources
-  log_info("Loading data sources")
+  # Load data
   all_data <- load_processed_data()
   product_categories <- load_product_categories()
   
-  if (is.null(all_data$opps_data)) {
-    log_error("Required dataset 'opps_data' not available")
-    return(NULL)
-  }
+  # Create base panel
+  panel_data <- create_base_panel(all_data$opps_data, 
+                                  year_range = c(min_year - 5, max_year))
   
-  # 2. Create base panel structure
-  # if (use_checkpoints) {
-  #   panel_data <- load_checkpoint("base_panel")
-  # }
-  # 
-  # if (is.null(panel_data)) {
-  #   # Create the base panel
-  #   tryCatch({
-  #     panel_data <- create_base_panel(all_data$opps_data, 
-  #                                     all_data$customer_data,
-  #                                     year_range = c(min_year - 5, max_year))
-  #     if (use_checkpoints) save_checkpoint(panel_data, "base_panel")
-  #   }, error = function(e) {
-  #     log_error("Error creating base panel: %s", e$message)
-  #     stop(paste("Failed to create base panel:", e$message))
-  #   })
-  # }
+  # Add features in the correct order
+  panel_data <- add_customer_characteristics(
+    panel_data, all_data$opps_data, all_data$customer_data)
   
-  # 2. Create base panel structure
-  if (use_checkpoints) {
-    panel_data <- load_checkpoint("base_panel")
-  }
+  panel_data <- add_opportunity_features(
+    panel_data, all_data$opps_data, product_categories)
   
-  if (is.null(panel_data)) {
-    # Create the base panel
-    tryCatch({
-      # FIXED: Removed the customer_data argument
-      panel_data <- create_base_panel(all_data$opps_data, 
-                                      year_range = c(min_year - 5, max_year))
-      if (use_checkpoints) save_checkpoint(panel_data, "base_panel")
-    }, error = function(e) {
-      log_error("Error creating base panel: %s", e$message)
-      stop(paste("Failed to create base panel:", e$message))
-    })
-  }
+  # Critical step: add software features using SAP data
+  panel_data <- add_software_features(
+    panel_data, all_data$sap_software, all_data$customer_data)
   
-  # 3. Add customer characteristics
-  if (use_checkpoints) {
-    checkpoint_data <- load_checkpoint("customer_chars")
-    if (!is.null(checkpoint_data)) {
-      panel_data <- checkpoint_data
-      log_info("Loaded customer characteristics from checkpoint")
-    } else {
-      tryCatch({
-        panel_data <- add_customer_characteristics(
-          panel_data, all_data$opps_data, all_data$customer_data
-        )
-        if (use_checkpoints) save_checkpoint(panel_data, "customer_chars")
-      }, error = function(e) {
-        log_error("Error adding customer characteristics: %s", e$message)
-        # Provide debug information
-        log_error("Columns in opportunities data: %s", 
-                  paste(names(all_data$opps_data), collapse=", "))
-        stop(paste("Failed to add customer characteristics:", e$message))
-      })
-    }
-  } else {
-    tryCatch({
-      panel_data <- add_customer_characteristics(
-        panel_data, all_data$opps_data, all_data$customer_data
-      )
-    }, error = function(e) {
-      log_error("Error adding customer characteristics: %s", e$message)
-      stop(paste("Failed to add customer characteristics:", e$message))
-    })
-  }
+  # Add other features
+  panel_data <- add_interaction_features(
+    panel_data, all_data$meetings_data, all_data$mails_data, all_data$other_act_data)
   
-  # 4. Add opportunity features
-  if (use_checkpoints) {
-    checkpoint_data <- load_checkpoint("opportunity_features")
-    if (!is.null(checkpoint_data)) {
-      panel_data <- checkpoint_data
-      log_info("Loaded opportunity features from checkpoint")
-    } else {
-      tryCatch({
-        panel_data <- add_opportunity_features(
-          panel_data, all_data$opps_data, product_categories
-        )
-        if (use_checkpoints) save_checkpoint(panel_data, "opportunity_features")
-      }, error = function(e) {
-        log_error("Error adding opportunity features: %s", e$message)
-        stop(paste("Failed to add opportunity features:", e$message))
-      })
-    }
-  } else {
-    tryCatch({
-      panel_data <- add_opportunity_features(
-        panel_data, all_data$opps_data, product_categories
-      )
-    }, error = function(e) {
-      log_error("Error adding opportunity features: %s", e$message)
-      stop(paste("Failed to add opportunity features:", e$message))
-    })
-  }
+  panel_data <- add_service_features(
+    panel_data, all_data$sis_cases, all_data$sis_missions, all_data$customer_data)
   
-  # 5. Add software features
-  if (use_checkpoints) {
-    checkpoint_data <- load_checkpoint("software_features")
-    if (!is.null(checkpoint_data)) {
-      panel_data <- checkpoint_data
-      log_info("Loaded software features from checkpoint")
-    } else {
-      tryCatch({
-        panel_data <- add_software_features(
-          panel_data, all_data$sap_software, all_data$customer_data
-        )
-        if (use_checkpoints) save_checkpoint(panel_data, "software_features")
-      }, error = function(e) {
-        log_error("Error adding software features: %s", e$message)
-        stop(paste("Failed to add software features:", e$message))
-      })
-    }
-  } else {
-    tryCatch({
-      panel_data <- add_software_features(
-        panel_data, all_data$sap_software, all_data$customer_data
-      )
-    }, error = function(e) {
-      log_error("Error adding software features: %s", e$message)
-      stop(paste("Failed to add software features:", e$message))
-    })
-  }
+  panel_data <- add_installed_base_features(
+    panel_data, all_data$sis_installed_base, all_data$reg_products, all_data$customer_data)
   
-  # 6. Add interaction features - with better error handling
-  if (use_checkpoints) {
-    checkpoint_data <- load_checkpoint("interaction_features")
-    if (!is.null(checkpoint_data)) {
-      panel_data <- checkpoint_data
-      log_info("Loaded interaction features from checkpoint")
-    } else {
-      tryCatch({
-        # Try with all data first
-        log_info("Adding interaction features")
-        panel_data <- add_interaction_features(
-          panel_data, all_data$meetings_data, all_data$mails_data, all_data$other_act_data
-        )
-        if (use_checkpoints) save_checkpoint(panel_data, "interaction_features")
-      }, error = function(e) {
-        log_error("Error adding interaction features: %s", e$message)
-        if (use_checkpoints) save_checkpoint(panel_data, "interaction_features_error")
-        
-        # Try without other activities data
-        log_warn("Trying to continue without other_act_data")
-        tryCatch({
-          panel_data <- add_interaction_features(
-            panel_data, all_data$meetings_data, all_data$mails_data, NULL
-          )
-          if (use_checkpoints) save_checkpoint(panel_data, "interaction_features_partial")
-        }, error = function(e2) {
-          log_error("Still failed to add interaction features: %s", e2$message)
-          
-          # Try with completely minimal interaction features
-          log_warn("Creating minimal interaction features as fallback")
-          panel_data$completed_meetings_num_total <- 0
-          panel_data$mails_total <- 0
-          panel_data$other_act_phone_calls <- 0
-          panel_data$other_act_letters <- 0
-          panel_data$other_act_faxes <- 0
-          panel_data$sales_act_synchronous <- 0
-          panel_data$sales_act_asynchronous <- 0
-          panel_data$aggregated_sales_act <- 0
-          panel_data$effort_to_revenue_ratio <- 0
-          panel_data$lagged_effort_to_revenue_ratio <- 0
-          panel_data$rolling_interactions_3yr <- NA_real_
-          panel_data$rolling_efforts_3yr <- NA_real_
-          
-          log_info("Created minimal interaction features")
-          if (use_checkpoints) save_checkpoint(panel_data, "interaction_features_minimal")
-          
-          # Don't stop the process, continue with minimal features
-        })
-      })
-    }
-  } else {
-    # No checkpoints, but still use error handling
-    tryCatch({
-      panel_data <- add_interaction_features(
-        panel_data, all_data$meetings_data, all_data$mails_data, all_data$other_act_data
-      )
-    }, error = function(e) {
-      log_error("Error adding interaction features: %s", e$message)
-      
-      # Try without other activities data
-      log_warn("Trying to continue without other_act_data")
-      tryCatch({
-        panel_data <- add_interaction_features(
-          panel_data, all_data$meetings_data, all_data$mails_data, NULL
-        )
-      }, error = function(e2) {
-        log_error("Still failed to add interaction features: %s", e2$message)
-        
-        # Create minimal interaction features as fallback
-        log_warn("Creating minimal interaction features as fallback")
-        panel_data$completed_meetings_num_total <- 0
-        panel_data$mails_total <- 0
-        panel_data$other_act_phone_calls <- 0
-        panel_data$other_act_letters <- 0
-        panel_data$other_act_faxes <- 0
-        panel_data$sales_act_synchronous <- 0
-        panel_data$sales_act_asynchronous <- 0
-        panel_data$aggregated_sales_act <- 0
-        panel_data$effort_to_revenue_ratio <- 0
-        panel_data$lagged_effort_to_revenue_ratio <- 0
-        panel_data$rolling_interactions_3yr <- NA_real_
-        panel_data$rolling_efforts_3yr <- NA_real_
-        
-        log_info("Created minimal interaction features")
-      })
-    })
-  }
+  panel_data <- add_temporal_features(panel_data)
   
-  # 7. Add service features
-  if (use_checkpoints) {
-    checkpoint_data <- load_checkpoint("service_features")
-    if (!is.null(checkpoint_data)) {
-      panel_data <- checkpoint_data
-      log_info("Loaded service features from checkpoint")
-    } else {
-      tryCatch({
-        panel_data <- add_service_features(
-          panel_data, all_data$sis_cases, all_data$sis_missions, all_data$customer_data
-        )
-        if (use_checkpoints) save_checkpoint(panel_data, "service_features")
-      }, error = function(e) {
-        log_error("Error adding service features: %s", e$message)
-        # Continue with process, service features are not critical
-        log_warn("Continuing without service features")
-      })
-    }
-  } else {
-    tryCatch({
-      panel_data <- add_service_features(
-        panel_data, all_data$sis_cases, all_data$sis_missions, all_data$customer_data
-      )
-    }, error = function(e) {
-      log_error("Error adding service features: %s", e$message)
-      # Continue with process
-      log_warn("Continuing without service features")
-    })
-  }
+  # Critical step: create treatment variables correctly
+  panel_data <- add_treatment_variables(panel_data)
   
-  # 8. Add installed base features
-  if (use_checkpoints) {
-    checkpoint_data <- load_checkpoint("installed_base_features")
-    if (!is.null(checkpoint_data)) {
-      panel_data <- checkpoint_data
-      log_info("Loaded installed base features from checkpoint")
-    } else {
-      tryCatch({
-        panel_data <- add_installed_base_features(
-          panel_data, all_data$sis_installed_base, all_data$reg_products, all_data$customer_data
-        )
-        if (use_checkpoints) save_checkpoint(panel_data, "installed_base_features")
-      }, error = function(e) {
-        log_error("Error adding installed base features: %s", e$message)
-        # Continue with process
-        log_warn("Continuing without installed base features")
-      })
-    }
-  } else {
-    tryCatch({
-      panel_data <- add_installed_base_features(
-        panel_data, all_data$sis_installed_base, all_data$reg_products, all_data$customer_data
-      )
-    }, error = function(e) {
-      log_error("Error adding installed base features: %s", e$message)
-      # Continue with process
-      log_warn("Continuing without installed base features")
-    })
-  }
-  
-  # 9. Add temporal features
-  if (use_checkpoints) {
-    checkpoint_data <- load_checkpoint("temporal_features")
-    if (!is.null(checkpoint_data)) {
-      panel_data <- checkpoint_data
-      log_info("Loaded temporal features from checkpoint")
-    } else {
-      tryCatch({
-        panel_data <- add_temporal_features(panel_data)
-        if (use_checkpoints) save_checkpoint(panel_data, "temporal_features")
-      }, error = function(e) {
-        log_error("Error adding temporal features: %s", e$message)
-        # This is more critical, but continue with basic temporal features
-        log_warn("Adding minimal temporal features as fallback")
-        panel_data <- panel_data %>%
-          dplyr::group_by(customer_id) %>%
-          dplyr::mutate(
-            customer_tenure = 1,
-            time_to_treat = 0
-          ) %>%
-          dplyr::ungroup()
-      })
-    }
-  } else {
-    tryCatch({
-      panel_data <- add_temporal_features(panel_data)
-    }, error = function(e) {
-      log_error("Error adding temporal features: %s", e$message)
-      # Add minimal temporal features
-      log_warn("Adding minimal temporal features as fallback")
-      panel_data <- panel_data %>%
-        dplyr::group_by(customer_id) %>%
-        dplyr::mutate(
-          customer_tenure = 1,
-          time_to_treat = 0
-        ) %>%
-        dplyr::ungroup()
-    })
-  }
-  
-  # 10. Add treatment variables
-  if (use_checkpoints) {
-    checkpoint_data <- load_checkpoint("treatment_variables")
-    if (!is.null(checkpoint_data)) {
-      panel_data <- checkpoint_data
-      log_info("Loaded treatment variables from checkpoint")
-    } else {
-      tryCatch({
-        panel_data <- add_treatment_variables(panel_data)
-        if (use_checkpoints) save_checkpoint(panel_data, "treatment_variables")
-      }, error = function(e) {
-        log_error("Error adding treatment variables: %s", e$message)
-        # This is critical, add minimal treatment variables
-        log_warn("Adding minimal treatment variables as fallback")
-        panel_data$treatment <- 0
-        panel_data$post_period <- 0
-        panel_data$ever_treated <- 0
-      })
-    }
-  } else {
-    tryCatch({
-      panel_data <- add_treatment_variables(panel_data)
-    }, error = function(e) {
-      log_error("Error adding treatment variables: %s", e$message)
-      # Add minimal treatment variables
-      log_warn("Adding minimal treatment variables as fallback")
-      panel_data$treatment <- 0
-      panel_data$post_period <- 0
-      panel_data$ever_treated <- 0
-    })
-  }
-  
-  # 11. Clean and finalize the panel
-  if (use_checkpoints) {
-    checkpoint_data <- load_checkpoint(paste0("final_panel_", min_year, "_", max_year))
-    if (!is.null(checkpoint_data)) {
-      panel_data <- checkpoint_data
-      log_info("Loaded final panel from checkpoint")
-    } else {
-      tryCatch({
-        panel_data <- clean_panel_dataset(
-          panel_data, min_year = min_year, max_year = max_year, country_filter = country_filter
-        )
-        attr(panel_data, "cleaned") <- TRUE
-        if (use_checkpoints) {
-          save_checkpoint(panel_data, paste0("final_panel_", min_year, "_", max_year))
-        }
-      }, error = function(e) {
-        log_error("Error cleaning panel dataset: %s", e$message)
-        # Skip cleaning but still return what we have
-        log_warn("Returning uncleaned panel")
-        attr(panel_data, "cleaned") <- FALSE
-      })
-    }
-  } else {
-    tryCatch({
-      panel_data <- clean_panel_dataset(
-        panel_data, min_year = min_year, max_year = max_year, country_filter = country_filter
-      )
-      attr(panel_data, "cleaned") <- TRUE
-    }, error = function(e) {
-      log_error("Error cleaning panel dataset: %s", e$message)
-      # Skip cleaning but still return what we have
-      log_warn("Returning uncleaned panel")
-      attr(panel_data, "cleaned") <- FALSE
-    })
-  }
-  
-  # Add metadata
-  attr(panel_data, "creation_date") <- Sys.Date()
-  attr(panel_data, "year_range") <- c(min_year, max_year)
-  attr(panel_data, "countries") <- country_filter
-  attr(panel_data, "n_customers") <- n_distinct(panel_data$customer_id)
-  
-  # Calculate number of treated safely
-  if ("ever_treated" %in% names(panel_data)) {
-    attr(panel_data, "n_treated") <- sum(unique(panel_data$ever_treated), na.rm = TRUE)
-  } else {
-    attr(panel_data, "n_treated") <- 0
-  }
-  
-  log_info("Panel dataset construction complete: %d rows, %d customers, years %d-%d",
-           nrow(panel_data), attr(panel_data, "n_customers"), min_year, max_year)
+  # Clean and filter
+  panel_data <- clean_panel_dataset(
+    panel_data, min_year = min_year, max_year = max_year, country_filter = country_filter)
   
   return(panel_data)
 }
