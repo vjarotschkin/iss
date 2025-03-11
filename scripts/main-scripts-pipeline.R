@@ -26,6 +26,8 @@ main()
 
 source(here::here("scripts", "02_data_cleaning.R"))
 main()
+
+create_complete_panel()
 source(here::here("scripts", "03_panel_creation.R"))
 # source(here::here("scripts", "04_feature_eng.R"))
 # source(here::here("R", "utils", "validation.R"))

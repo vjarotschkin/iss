@@ -1,64 +1,81 @@
-###############################################################################
-# 01_data_loading.R
-# Purpose: Load all raw data files from various sources and save as 
-#          intermediate .rds files.
-#
-# Project structure (directories relative to the project root):
-#   - data/raw: raw data files
-#   - data/interim: intermediate RDS files
-#   - data/processed: cleaned data files
-#   - data/final: final outputs
-###############################################################################
+# 01_improved_data_loading.R
+# Purpose: Load all raw data files with improved type handling
 
-# Setup -----------------------------------------------------------------------
-if(!require("pacman")) install.packages("pacman")
+# Load required packages
+if (!requireNamespace("pacman", quietly = TRUE)) {
+  install.packages("pacman")
+}
+
 pacman::p_load(
+  janitor,
   here,
-  data.table,
+  ggplot2,
   tidyverse,
   lubridate,
-  readxl,
-  janitor
+  data.table,
+  dplyr,
+  stringr,
+  readxl
 )
+
+# Create necessary directories if they don't exist
+dir.create(here::here("data"), showWarnings = FALSE)
+dir.create(here::here("data", "interim"), showWarnings = FALSE)
+dir.create(here::here("data", "external"), showWarnings = FALSE)
+dir.create(here::here("data", "processed"), showWarnings = FALSE)
+dir.create(here::here("data", "final"), showWarnings = FALSE)
+
 
 # Create necessary directories (if not already present)
 dir.create(here::here("data", "interim"), showWarnings = FALSE, recursive = TRUE)
+
+# Set options
+options(scipen = 999)
+options(warn = 1)  # Print warnings as they occur
 
 ###############################################################################
 # Helper Functions
 ###############################################################################
 
-# Safely read an Excel file with error handling.
-safe_read_excel <- function(file_path, sheet = 1, skip = 0, col_types = NULL, ...) {
+# Safely read an Excel file with improved error handling and type specification
+safe_read_excel <- function(file_path, sheet = 1, skip = 0, ...) {
   if (!file.exists(file_path)) {
     warning("File not found: ", file_path)
     return(NULL)
   }
+  
   tryCatch({
-    if (!is.null(col_types)) {
-      readxl::read_excel(file_path, sheet = sheet, skip = skip, col_types = col_types, ...)
-    } else {
-      readxl::read_excel(file_path, sheet = sheet, skip = skip, ...)
-    }
+    # First read a few rows to get column names
+    header_df <- readxl::read_excel(file_path, sheet = sheet, skip = skip, n_max = 1, ...)
+    col_names <- names(header_df)
+    
+    # Always read everything as text first to avoid type conversion errors
+    ## We are skipping the column type conversion as this is just making everything read in as text. The functions later don't work.
+    df <- readxl::read_excel(file_path, sheet = sheet, skip = skip  , col_types = "text"
+                             , ...)
+    
+    # Return the data frame with original column names preserved
+    return(df)
   }, error = function(e) {
     warning("Error reading file ", file_path, ": ", e$message)
     return(NULL)
   })
 }
 
-
-# Read and combine multiple Excel files into one data.table.
-read_and_bind <- function(file_paths, sheet = 1, skip = 0, col_types = NULL) {
+# Read and combine multiple Excel files into one data.table
+read_and_bind <- function(file_paths, sheet = 1, skip = 0, ...) {
   dfs <- lapply(file_paths, function(fp) {
     message("Reading file: ", basename(fp))
-    df <- safe_read_excel(fp, sheet = sheet, skip = skip, col_types = col_types)
+    df <- safe_read_excel(fp, sheet = sheet, skip = skip, ...)
     if (!is.null(df)) as.data.table(df) else NULL
   })
+  
   dfs <- dfs[!sapply(dfs, is.null)]
   if (length(dfs) == 0) {
     warning("No files were loaded successfully.")
     return(NULL)
   }
+  
   rbindlist(dfs, fill = TRUE)
 }
 
@@ -72,13 +89,15 @@ load_opportunities <- function() {
   opps_path <- here::here("data", "raw", "crm", "T_Opportunitys")
   opps_files <- list.files(path = opps_path, pattern = "del.*\\.xlsx", 
                            recursive = TRUE, full.names = TRUE)
+  
   if(length(opps_files) == 0) {
     warning("No opportunities files found in ", opps_path)
     return(NULL)
   }
+  
   message("Found ", length(opps_files), " opportunity files")
-  # Load all files as text to avoid type coercion warnings
-  opps_data <- read_and_bind(opps_files, sheet = 1, skip = 4, col_types = "text")
+  # Load all as text to prevent type conversion issues
+  opps_data <- read_and_bind(opps_files, sheet = 1, skip = 4)
   return(opps_data)
 }
 
@@ -88,10 +107,12 @@ load_quotes <- function() {
   quotes_path <- here::here("data", "raw", "crm", "T_Quotes")
   quotes_files <- list.files(path = quotes_path, pattern = "all_quotes.*\\.xlsx", 
                              full.names = TRUE)
+  
   if(length(quotes_files) == 0) {
     warning("No quotes files found in ", quotes_path)
     return(NULL)
   }
+  
   message("Found ", length(quotes_files), " quotes files")
   quotes_data <- read_and_bind(quotes_files, sheet = 1, skip = 4)
   return(quotes_data)
@@ -101,16 +122,21 @@ load_quotes <- function() {
 load_sap_software <- function() {
   message("Loading SAP Software data...")
   sap_file <- here::here("data", "raw", "sap", "Software_nach PHN_Material_nach_2020.xlsx")
+  
   if(!file.exists(sap_file)) {
     warning("SAP Software file not found: ", sap_file)
     return(NULL)
   }
+  
+  # Read with all columns as text to prevent coercion warnings
   sap_data <- safe_read_excel(sap_file, sheet = 4)
+  
   if(!is.null(sap_data)) {
     sap_data <- janitor::clean_names(sap_data)
     sap_data <- as.data.table(sap_data)
     message("Successfully loaded SAP Software data")
   }
+  
   return(sap_data)
 }
 
@@ -118,34 +144,50 @@ load_sap_software <- function() {
 load_sap_machines <- function() {
   message("Loading SAP Machines data...")
   machines_file <- here::here("data", "raw", "sap", "EXPORT_Lieferplan_14_20_changed_date_fail_vaj.xlsx")
+  
   if(!file.exists(machines_file)) {
     warning("SAP Machines file not found: ", machines_file)
     return(NULL)
   }
-  machines <- safe_read_excel(machines_file) %>% janitor::clean_names()
-  # Join with additional SAP files
-  vbak_file <- here::here("data", "raw", "sap", "EXPORT_VBAK.xlsx")
-  vbpa_file <- here::here("data", "raw", "sap", "EXPORT_VBPA.xlsx")
   
-  if(file.exists(vbak_file)) {
-    vbak <- safe_read_excel(vbak_file) %>% janitor::clean_names()
-    machines <- left_join(machines, vbak, by = c("nummer_vertriebsauftrag" = "verkaufsbeleg"))
-  } else {
-    warning("SAP VBAK file not found: ", vbak_file)
+  # Read with all columns as text
+  machines <- safe_read_excel(machines_file)
+  
+  if(!is.null(machines)) {
+    machines <- janitor::clean_names(machines)
+    
+    # Join with additional SAP files
+    vbak_file <- here::here("data", "raw", "sap", "EXPORT_VBAK.xlsx")
+    vbpa_file <- here::here("data", "raw", "sap", "EXPORT_VBPA.xlsx")
+    
+    if(file.exists(vbak_file)) {
+      vbak <- safe_read_excel(vbak_file)
+      if(!is.null(vbak)) {
+        vbak <- janitor::clean_names(vbak)
+        machines <- left_join(machines, vbak, by = c("nummer_vertriebsauftrag" = "verkaufsbeleg"))
+      }
+    } else {
+      warning("SAP VBAK file not found: ", vbak_file)
+    }
+    
+    if(file.exists(vbpa_file)) {
+      vbpa <- safe_read_excel(vbpa_file)
+      if(!is.null(vbpa)) {
+        vbpa <- janitor::clean_names(vbpa)
+        machines <- left_join(machines, vbpa, by = c("nummer_vertriebsauftrag" = "vertriebsbeleg"))
+      }
+    } else {
+      warning("SAP VBPA file not found: ", vbpa_file)
+    }
+    
+    machines <- as.data.table(machines)
+    message("Loaded SAP Machines data with ", nrow(machines), " records")
   }
   
-  if(file.exists(vbpa_file)) {
-    vbpa <- safe_read_excel(vbpa_file) %>% janitor::clean_names()
-    machines <- left_join(machines, vbpa, by = c("nummer_vertriebsauftrag" = "vertriebsbeleg"))
-  } else {
-    warning("SAP VBPA file not found: ", vbpa_file)
-  }
-  
-  machines <- as.data.table(machines)
-  message("Loaded SAP Machines data with ", nrow(machines), " records")
   return(machines)
 }
 
+# All other loading functions modified to use text column types initially
 # 5. SiS Data (Installed Base, Cases, Missions) ------------------------------
 load_sis_data <- function() {
   message("Loading SiS data...")
@@ -180,14 +222,6 @@ load_sis_data <- function() {
   } else {
     message("Found ", length(missions_files), " Missions files")
     missions <- read_and_bind(missions_files, sheet = 1, skip = 2)
-    ## machen den foldenden Command lieber im Data Cleaning Script
-    # if(!is.null(missions)) {
-    #   missions <- missions %>% as.data.table() %>%
-    #     .[, `:=`(
-    #       mission_year = as.numeric(substr(CW, 1, 4)),
-    #       mission_calendar_week = as.numeric(substr(CW, 6, 7))
-    #     )] %>% .[, CW := NULL]
-    # }
   }
   
   return(list(installed_base = installed_base, cases = cases, missions = missions))
@@ -198,15 +232,19 @@ load_customer_data <- function() {
   message("Loading Customer data...")
   cust_path <- here::here("data", "raw", "c4c", "t-customers")
   cust_files <- list.files(path = cust_path, pattern = "Kundenliste.*\\.xlsx", full.names = TRUE)
+  
   if(length(cust_files) == 0) {
     warning("No customer files found in ", cust_path)
     return(NULL)
   }
+  
   message("Found ", length(cust_files), " customer files")
   cust_data <- read_and_bind(cust_files, sheet = 1, skip = 4)
+  
   if(!is.null(cust_data)) {
     cust_data <- as.data.table(cust_data)[, .(`Account ID`, `SAP ID`, Name)]
   }
+  
   return(cust_data)
 }
 
@@ -215,14 +253,18 @@ load_contacts_data <- function() {
   message("Loading Contacts data...")
   contacts_path <- here::here("data", "raw", "crm", "T_DATA", "T_Ansprechpartner")
   contacts_files <- list.files(path = contacts_path, pattern = "Ansprechpartner.*\\.xlsx", full.names = TRUE)
+  
   if(length(contacts_files) == 0) {
     warning("No contacts files found in ", contacts_path)
     return(NULL)
   }
+  
   contacts_data <- read_and_bind(contacts_files, sheet = 1, skip = 4)
+  
   if(!is.null(contacts_data)) {
     contacts_data <- as.data.table(contacts_data)[ , !c("Phone", "Mobile", "E-Mail"), with = FALSE]
   }
+  
   return(contacts_data)
 }
 
@@ -231,10 +273,12 @@ load_meetings_data <- function() {
   message("Loading Meetings data...")
   meetings_path <- here::here("data", "raw", "c4c", "t-meetings")
   meetings_files <- list.files(path = meetings_path, pattern = "ListederAktivitaeten.*\\.xlsx", full.names = TRUE)
+  
   if(length(meetings_files) == 0) {
     warning("No meetings files found in ", meetings_path)
     return(NULL)
   }
+  
   meetings_data <- read_and_bind(meetings_files, sheet = 1, skip = 4)
   return(meetings_data)
 }
@@ -244,10 +288,12 @@ load_mails_data <- function() {
   message("Loading Mails data...")
   mails_path <- here::here("data", "raw", "c4c", "t-mails")
   mails_files <- list.files(path = mails_path, pattern = "Liste.*\\.xlsx", full.names = TRUE)
+  
   if(length(mails_files) == 0) {
     warning("No mails files found in ", mails_path)
     return(NULL)
   }
+  
   mails_data <- read_and_bind(mails_files, sheet = 1, skip = 4)
   return(mails_data)
 }
@@ -257,10 +303,12 @@ load_other_act_data <- function() {
   message("Loading Other Activities data...")
   other_path <- here::here("data", "raw", "c4c", "t-other-activities")
   other_files <- list.files(path = other_path, pattern = "Liste.*\\.xlsx", full.names = TRUE)
+  
   if(length(other_files) == 0) {
     warning("No other activities files found in ", other_path)
     return(NULL)
   }
+  
   other_data <- read_and_bind(other_files, sheet = 1, skip = 4)
   return(other_data)
 }
@@ -270,23 +318,27 @@ load_registered_products <- function() {
   message("Loading Registered Products data...")
   products_path <- here::here("data", "raw", "c4c", "t-products")
   prod_files <- list.files(path = products_path, pattern = "Liste.*\\.xlsx", full.names = TRUE)
+  
   if(length(prod_files) == 0) {
     warning("No registered products files found in ", products_path)
     return(NULL)
   }
-  # For each file, determine column types based on header names
+  
+  # Read all with text columns first
   prod_list <- lapply(prod_files, function(file) {
-    nms <- names(safe_read_excel(file, skip = 4, n_max = 0))
-    ct <- ifelse(grepl("^Shipping", nms), "date", "guess")
     message("Reading registered products file: ", basename(file))
-    dt <- safe_read_excel(file, sheet = 1, skip = 4, col_types = ct)
+    dt <- safe_read_excel(file, sheet = 1, skip = 4)
     if(!is.null(dt)) as.data.table(dt) else NULL
   })
+  
   prod_list <- prod_list[!sapply(prod_list, is.null)]
   if (length(prod_list) == 0) return(NULL)
+  
   prod_data <- rbindlist(prod_list, fill = TRUE)
+  
   # Optionally rename columns to include a suffix for clarity
   setnames(prod_data, old = names(prod_data), new = paste0(names(prod_data), "_reg_prod"))
+  
   return(prod_data)
 }
 
@@ -294,12 +346,18 @@ load_registered_products <- function() {
 load_exploration_moderators <- function() {
   message("Loading Survey Exploratory Moderators data...")
   survey_file <- here::here("data", "raw", "survey", "Copy of Copy of 210517_sw_at_trumpf_extended_vaj.xlsx")
+  
   if(!file.exists(survey_file)) {
     warning("Survey file not found: ", survey_file)
     return(NULL)
   }
+  
   survey_data <- safe_read_excel(survey_file, sheet = "Survey_EN", skip = 1)
-  if(!is.null(survey_data)) survey_data <- as.data.table(survey_data)
+  
+  if(!is.null(survey_data)) {
+    survey_data <- as.data.table(survey_data)
+  }
+  
   return(survey_data)
 }
 
